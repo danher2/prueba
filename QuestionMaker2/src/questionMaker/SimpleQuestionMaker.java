@@ -7,7 +7,7 @@ public class SimpleQuestionMaker {
 	public static void main(String[] args) {
 		// TODO Auto-generated method stub
 
-		Questions question = new Questions();
+		Questions2 question = new Questions2();
 
 		System.out.println("");
 		System.out.println("");
