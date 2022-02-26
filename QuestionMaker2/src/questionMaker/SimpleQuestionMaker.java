@@ -1,6 +1,6 @@
 package questionMaker;
 
-import java.util.Scanner;
+
 
 public class SimpleQuestionMaker {
 
@@ -9,7 +9,6 @@ public class SimpleQuestionMaker {
 
 		Questions2 question = new Questions2();
 
-		System.out.println("");
 		System.out.println("");
 		System.out.println("OK, lets get started with this");
 		System.out.println("Instrutions:");
