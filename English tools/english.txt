@@ -1,0 +1,16 @@
+L   - I - present+past  +Must have done   -  connectors  
+M - You - will             + Can’t have done -  connectors
+M - He - would          + Couldn’t have done -  prepositions
+J   -  She - can            + May have done -  prepositions
+V -  It - could             + Could have done -  miselaneus
+S -   We - should       +Should have done -  miselaneus
+D-   They - must        + perfects
+
+
+ present+past perfect tenses
+will have (habre)               
+ would have (habria)            
+ can have (puedo haber)            
+ could have (podria haber)           
+ should have (deberia haber)    
+ must have (debo haber)   
