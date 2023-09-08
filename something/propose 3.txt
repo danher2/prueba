@@ -9,11 +9,7 @@ N1qlQueryResult class
 i'm not able to use above class because they have been deprecated in java-client 3.3.4 version
 please generate an alternative for findApplicationsIdForRetry method in order to use java-client 3.3.4 
 
-ChatGPT
-I understand that you're looking for an alternative implementation of the findApplicationsIdForRetry method using Couchbase Java SDK version 3.3.4, considering that some classes and methods have been deprecated. Here's an updated version of the method:
 
-java
-Copy code
 @Override
 public List<CouchbaseRetryModel> findApplicationsIdForRetry() {
     final String METHOD_NAME = "findApplicationsIdForRetry";
@@ -45,46 +41,6 @@ Used QueryResult instead of N1qlQueryResult for the result of the query.
 Adjusted the timeout duration using Duration.ofSeconds(120).
 This updated code should work with Couchbase Java SDK version 3.3.4. Please give it a try, and if you have any further questions or concerns, feel free to ask.
 
-
-
-
-
-
-
-@Override
-public List<CouchbaseRetryModel> findApplicationsIdForRetry() {
-    final String METHOD_NAME = "findApplicationsIdForRetry";
-    LogUtil.log(CLASS_NAME, METHOD_NAME, null, "reading with a limit of: " + readLimit, INFO);
-
-    try {
-        String query = "SELECT " + String.join(", ", SELECT_CLAUSE) +
-                " FROM `" + bucket.bucketName() + "` WHERE " + SELECT_WHERE_CLAUSE +
-                " ORDER BY " + SORT_PARAM + " ASC LIMIT $limit";
-        JsonObject parameters = JsonObject.create().put("$limit", readLimit);
-
-        QueryResult result = bucket.query(QueryOptions.query(query)
-                .parameters(parameters)
-                .scanConsistency(QueryScanConsistency.REQUEST_PLUS)
-                .timeout(Duration.ofSeconds(120)));
-
-        return filterForProcessing(extractRetryModelFromResult(result));
-    } catch (CouchbaseException e) {
-        LogUtil.err(CLASS_NAME, METHOD_NAME, null, "Failed to fetch", e);
-        throw new CouchbaseException("Failed to fetch the documents", e);
-    }
-}
-
-Changes Made:
-
-Replaced the use of the Statement class and select method with a constructed N1QL query string.
-Constructed the N1QL query using QueryOptions.query().
-Removed the use of Sort.asc(SORT_PARAM) and directly added the ORDER BY clause to the query string.
-Used QueryResult instead of N1qlQueryResult for the result of the query.
-Adjusted the timeout duration using Duration.ofSeconds(120).
-This updated code should work with Couchbase Java SDK version 3.3.4. Please give it a try, and if you have any further questions or concerns, feel free to ask.
-
-
-========================================================================
 
 
 
