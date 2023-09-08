@@ -10,6 +10,7 @@ import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.io.IOException;
@@ -26,6 +27,7 @@ import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import static com.couchbase.client.java.query.QueryScanConsistency.REQUEST_PLUS;
 
 @Component
+@RequiredArgsConstructor
 public class RetryServiceDaoImpl implements RetryServiceDao {
 
     private static final String CLASS_NAME = RetryServiceDaoImpl.class.getSimpleName();
@@ -48,7 +50,7 @@ public class RetryServiceDaoImpl implements RetryServiceDao {
     private static final String SORT_PARAM = "application.applicationDate"; // Define your sort parameter here
 
     private final Bucket bucket;
-    
+
     @Value("${retry.service.read-limit}")
     private int readLimit;
 
@@ -60,15 +62,15 @@ public class RetryServiceDaoImpl implements RetryServiceDao {
     public List<CouchbaseRetryModel> findApplicationsIdForRetry() {
         final String METHOD_NAME = "findApplicationsIdForRetry";
         LogUtil.log(CLASS_NAME, METHOD_NAME, null, "reading with limit of: " + readLimit, INFO);
-        
+
         try {
             String query = "SELECT " + String.join(", ", SELECT_CLAUSE) + " FROM `" + bucket.name() + "` WHERE " + SELECT_WHERE_CLAUSE + " ORDER BY " + SORT_PARAM + " ASC LIMIT $limit";
             JsonObject parameters = JsonObject.create().put("$limit", readLimit);
-            
+
             QueryResult result = bucket.query(query,
-                parameters,
-                queryOptions().scanConsistency(REQUEST_PLUS).timeout(120, TimeUnit.SECONDS));
-            
+                    parameters,
+                    queryOptions().scanConsistency(REQUEST_PLUS).timeout(120, TimeUnit.SECONDS));
+
             return filterForProcessing(extractRetryModelFromResult(result));
         } catch (CouchbaseException e) {
             LogUtil.err(CLASS_NAME, METHOD_NAME, null, "Failed to fetch", e);
@@ -105,10 +107,10 @@ public class RetryServiceDaoImpl implements RetryServiceDao {
     @Override
     public boolean updateMetaDataInDocument(String applicationId, int retryCount) {
         final String METHOD_NAME = "updateMetaDataInDocument";
-        
+
         JsonObject content = JsonObject.create()
-            .put(RETRY_COUNT, retryCount)
-            .put(LAST_MODIFIED_TIME, getLocalTime());
+                .put(RETRY_COUNT, retryCount)
+                .put(LAST_MODIFIED_TIME, getLocalTime());
 
         try {
             bucket.defaultCollection().upsert(applicationId, content);
@@ -126,12 +128,12 @@ public class RetryServiceDaoImpl implements RetryServiceDao {
         LogUtil.log(CLASS_NAME, METHOD_NAME, applicationId, "Updating to Error resolver WI ", DEBUG);
 
         JsonObject content = JsonObject.create()
-            .put(STATE, model.getState().name())
-            .put(STATUS, model.getStatus().name())
-            .put(LAST_MODIFIED_TIME, getLocalTime())
-            .put(QUEUE_NAME, model.getQueueName())
-            .put(ERROR_HISTORY, JsonArray.from(JsonObject.fromJson(new Gson().toJson(model.getErrors()))))
-            .put(RETRY_COUNT, model.getRetryCount());
+                .put(STATE, model.getState().name())
+                .put(STATUS, model.getStatus().name())
+                .put(LAST_MODIFIED_TIME, getLocalTime())
+                .put(QUEUE_NAME, model.getQueueName())
+                .put(ERROR_HISTORY, JsonArray.from(JsonObject.fromJson(new Gson().toJson(model.getErrors()))))
+                .put(RETRY_COUNT, model.getRetryCount());
 
         try {
             bucket.defaultCollection().upsert(applicationId, content);
