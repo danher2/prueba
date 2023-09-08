@@ -1,0 +1,144 @@
+package bk.risk.cco.retry.service.dao;
+
+import bk.risk.cco.retry.service.exception.CouchbaseException;
+import bk.risk.cco.retry.service.model.CouchbaseRetryModel;
+import bk.risk.cco.retry.service.model.WriterModel;
+import bk.risk.cco.retry.service.util.LogUtil;
+import com.couchbase.client.core.error.CouchbaseException;
+import com.couchbase.client.java.Bucket;
+import com.couchbase.client.java.json.JsonArray;
+import com.couchbase.client.java.json.JsonObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import static bk.risk.cco.retry.service.util.DateUtil.getLocalTime;
+import static bk.risk.cco.retry.service.util.LogUtil.Level.DEBUG;
+import static bk.risk.cco.retry.service.util.LogUtil.Level.INFO;
+import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+import static com.couchbase.client.java.query.QueryScanConsistency.REQUEST_PLUS;
+
+@Component
+public class RetryServiceDaoImpl implements RetryServiceDao {
+
+    private static final String CLASS_NAME = RetryServiceDaoImpl.class.getSimpleName();
+
+    private static final String[] SELECT_CLAUSE = {"META().id", "metaData.retryCount", "applicants[0].personalInformation.partyId"};
+
+    private static final String SELECT_WHERE_CLAUSE = "status in [\"error\",\"retry\", \"ERROR\", \"RETRY\"] and metaData is not null";
+
+    private static final String META_DATA_RETRY_COUNT = "metaData.retryCount";
+
+    private static final String META_DATA_LAST_MODIFIED = "metaData.lastModified";
+
+    private static final String RETRY_COUNT = "retryCount";
+    private static final String LAST_MODIFIED_TIME = "lastModifiedTime";
+    private static final String STATE = "state";
+    private static final String STATUS = "status";
+    private static final String QUEUE_NAME = "queueName";
+    private static final String ERROR_HISTORY = "errorHistory";
+
+    private static final String SORT_PARAM = "application.applicationDate"; // Define your sort parameter here
+
+    private final Bucket bucket;
+    
+    @Value("${retry.service.read-limit}")
+    private int readLimit;
+
+    public RetryServiceDaoImpl(Cluster cluster, @Value("${retry.service.bucket-name}") String bucketName) {
+        this.bucket = cluster.bucket(bucketName);
+    }
+
+    @Override
+    public List<CouchbaseRetryModel> findApplicationsIdForRetry() {
+        final String METHOD_NAME = "findApplicationsIdForRetry";
+        LogUtil.log(CLASS_NAME, METHOD_NAME, null, "reading with limit of: " + readLimit, INFO);
+        
+        try {
+            String query = "SELECT " + String.join(", ", SELECT_CLAUSE) + " FROM `" + bucket.name() + "` WHERE " + SELECT_WHERE_CLAUSE + " ORDER BY " + SORT_PARAM + " ASC LIMIT $limit";
+            JsonObject parameters = JsonObject.create().put("$limit", readLimit);
+            
+            QueryResult result = bucket.query(query,
+                parameters,
+                queryOptions().scanConsistency(REQUEST_PLUS).timeout(120, TimeUnit.SECONDS));
+            
+            return filterForProcessing(extractRetryModelFromResult(result));
+        } catch (CouchbaseException e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, null, "Failed to fetch", e);
+            throw new CouchbaseException("Failed to fetch the documents", e);
+        }
+    }
+
+    private List<CouchbaseRetryModel> filterForProcessing(List<CouchbaseRetryModel> extractRetryModelFromResult) {
+        extractRetryModelFromResult.removeIf(Objects::isNull);
+        return extractRetryModelFromResult;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ArrayList<CouchbaseRetryModel> cloneList(List<CouchbaseRetryModel> extractRetryModelFromResult) {
+        ArrayList<CouchbaseRetryModel> models = (ArrayList<CouchbaseRetryModel>) extractRetryModelFromResult;
+        return (ArrayList<CouchbaseRetryModel>) models.clone();
+    }
+
+    private List<CouchbaseRetryModel> extractRetryModelFromResult(QueryResult result) {
+        final String METHOD_NAME = "extractRetryModelFromResult";
+        LogUtil.log(CLASS_NAME, METHOD_NAME, null, "Results are fetched and mapping", DEBUG);
+
+        final ObjectMapper mapper = new ObjectMapper();
+        return result.rowsAsObject().stream().map(row -> {
+            try {
+                return mapper.readValue(row.valueAs(String.class), CouchbaseRetryModel.class);
+            } catch (IOException e) {
+                LogUtil.err(CLASS_NAME, METHOD_NAME, null, "Failed to map the results", e);
+                return null;
+            }
+        }).collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean updateMetaDataInDocument(String applicationId, int retryCount) {
+        final String METHOD_NAME = "updateMetaDataInDocument";
+        
+        JsonObject content = JsonObject.create()
+            .put(RETRY_COUNT, retryCount)
+            .put(LAST_MODIFIED_TIME, getLocalTime());
+
+        try {
+            bucket.defaultCollection().upsert(applicationId, content);
+            return true;
+        } catch (CouchbaseException e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId, "Failed to update", e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean updateDocumentForErrorResolverWI(WriterModel model) {
+        final String METHOD_NAME = "updateDocumentForErrorResolverWI";
+        String applicationId = model.getApplicationId();
+        LogUtil.log(CLASS_NAME, METHOD_NAME, applicationId, "Updating to Error resolver WI ", DEBUG);
+
+        JsonObject content = JsonObject.create()
+            .put(STATE, model.getState().name())
+            .put(STATUS, model.getStatus().name())
+            .put(LAST_MODIFIED_TIME, getLocalTime())
+            .put(QUEUE_NAME, model.getQueueName())
+            .put(ERROR_HISTORY, JsonArray.from(JsonObject.fromJson(new Gson().toJson(model.getErrors()))))
+            .put(RETRY_COUNT, model.getRetryCount());
+
+        try {
+            bucket.defaultCollection().upsert(applicationId, content);
+            return true;
+        } catch (CouchbaseException e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId, "Failed to update", e);
+            return false;
+        }
+    }
+}
