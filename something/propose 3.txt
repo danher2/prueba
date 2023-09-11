@@ -43,4 +43,34 @@ This updated code should work with Couchbase Java SDK version 3.3.4. Please give
 
 
 
+updateMetaDataInDocument
+
+ @Override
+    public boolean updateMetaDataInDocument(String applicationId, int retryCount) {
+        final String METHOD_NAME = "updateMetaDataInDocument";
+
+        String query = "UPDATE " + bucket.name() +
+                " USE KEYS $applicationId" +
+                " SET " + META_DATA_RETRY_COUNT + " = " + $_RETRY_COUNT +
+                ", " + SET_EXPIRATION + " = 0" +
+                ", " + META_DATA_LAST_MODIFIED + " = " + $_LAST_MODIFIED_TIME;
+
+        JsonObject queryParams = JsonObject.create()
+                .put("$applicationId", applicationId)
+                .put($_RETRY_COUNT, retryCount)
+                .put($_LAST_MODIFIED_TIME, getLocalTime());
+
+        QueryOptions queryOptions = QueryOptions.queryOptions()
+                .scanConsistency(REQUEST_PLUS)
+                .timeout(Duration.ofSeconds(120));
+
+        try {
+            QueryResult result = bucket.query(QueryStatement.parameterized(query, queryParams), queryOptions);
+            return result.metaData().status().toString().equals("SUCCESS");
+        } catch (Exception e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId, "Failed to update", e);
+            return false;
+        }
+    }
+
 
