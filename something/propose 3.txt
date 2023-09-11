@@ -107,7 +107,7 @@ public boolean updateDocumentForErrorResolverWI(WriterModel model) {
         .timeout(Duration.ofSeconds(120));
 
     try {
-        QueryResult result = cluster.query(QueryStatement.parameterized(query, placeholderValues), queryOptions);
+        QueryResult result = cluster.query(query, queryOptions);
         return result.metaData().status().toString().equals("SUCCESS");
     } catch (Exception e) {
         LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId, "Failed to update", e);
@@ -116,13 +116,14 @@ public boolean updateDocumentForErrorResolverWI(WriterModel model) {
 }
 
 In this updated code:
-
-We construct the N1QL query as a string with placeholders like $applicationId, $state, $status, etc.
-We use JsonObject named placeholderValues to hold the parameter values that will replace the placeholders in the query.
-We use QueryStatement.parameterized(query, placeholderValues) to create a parameterized query statement.
-We pass the query statement, query options, and query parameters to the cluster.query method to execute the parameterized query.
-This updated code should work with Couchbase Java SDK version 3.3.4 for updating documents as intended.
-
+the changes made to the updateDocumentForErrorResolverWI method:
+Constructed the N1QL query as a plain query string with placeholders like $applicationId, $state, $status, etc.
+Created a JsonObject named placeholderValues to hold the parameter values that will replace the placeholders in the query.
+Set the actual parameter values in the placeholderValues object.
+Used QueryOptions to specify query parameters using the parameters method.
+Executed the query using the cluster.query method, passing the query string, query options, and query parameters.
+Checked the result status to determine the success of the update operation and handled exceptions.
+These changes ensure that the method correctly updates documents using Couchbase Java SDK version 3.3.4
 
 
 
