@@ -1,0 +1,228 @@
+import com.couchbase.client.java.query.QueryOptions;
+import com.couchbase.client.java.query.QueryResult;
+import com.couchbase.client.java.json.JsonArray;
+import com.couchbase.client.java.json.JsonObject;
+import com.couchbase.client.java.query.QueryScanConsistency;
+import org.springframework.util.CollectionUtils;
+
+import java.time.Duration;
+
+public class RetryServiceDaoImpl implements RetryServiceDao {
+
+    private static final String CLASS_NAME = RetryServiceDaoImpl.class.getSimpleName();
+    private static final String[] SELECT_CLAUSE = {"META().id", "metaData.retryCount", "applicants[0].personalInformation.partyId"};
+    private static final String SELECT_WHERE_CLAUSE = "status in [\"error\",\"retry\", \"ERROR\", \"RETRY\"] and metaData is not null";
+    private static final String META_DATA_RETRY_COUNT = "metaData.retryCount";
+    private static final String META_DATA_LAST_MODIFIED = "metaData.lastModified";
+    private static final String RETRY_COUNT = "retryCount";
+    private static final String LAST_MODIFIED_TIME = "lastModifiedTime";
+    private static final String STATE = "state";
+    private static final String STATUS = "status";
+    private static final String QUEUE_NAME = "queueName";
+    private static final String ERROR_HISTORY = "errorHistory";
+    private static final String SET_EXPIRATION = "META().expiration";
+    private final Cluster cluster;
+    private final String bucketName;
+    private final int readLimit;
+
+    public RetryServiceDaoImpl(Cluster cluster, String bucketName, int readLimit) {
+        this.cluster = cluster;
+        this.bucketName = bucketName;
+        this.readLimit = readLimit;
+    }
+
+    @Override
+    public List<CouchbaseRetryModel> findApplicationsIdForRetry() {
+        final String METHOD_NAME = "findApplicationsIdForRetry";
+        LogUtil.log(CLASS_NAME, METHOD_NAME, applicationId: null, message: "reading with limit of: " + readLimit, INFO);
+
+        String query = "SELECT " + String.join(", ", SELECT_CLAUSE) +
+            " FROM `" + bucketName + "`" +
+            " WHERE " + SELECT_WHERE_CLAUSE +
+            " ORDER BY " + SORT_PARAM +
+            " LIMIT " + readLimit;
+
+        QueryOptions queryOptions = QueryOptions.queryOptions()
+            .scanConsistency(QueryScanConsistency.REQUEST_PLUS)
+            .timeout(Duration.ofSeconds(120));
+
+        try {
+            QueryResult result = cluster.query(query, queryOptions);
+            return filterForProcessing(extractRetryModelFromResult(result));
+        } catch (Exception e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId: null, message: "Failed to fetch", e);
+            throw new CouchbaseException("Failed to fetch the documents", e);
+        }
+    }
+
+    private List<CouchbaseRetryModel> filterForProcessing(List<CouchbaseRetryModel> extractRetryModelFromResult) {
+        extractRetryModelFromResult.removeIf(Objects::isNull);
+        return extractRetryModelFromResult;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ArrayList<CouchbaseRetryModel> cloneList(List<CouchbaseRetryModel> extractRetryModelFromResult) {
+        ArrayList<CouchbaseRetryModel> models = (ArrayList<CouchbaseRetryModel>) extractRetryModelFromResult;
+        return (ArrayList<CouchbaseRetryModel>) models.clone();
+    }
+
+    private List<CouchbaseRetryModel> extractRetryModelFromResult(QueryResult result) {
+        final String METHOD_NAME = "extractRetryModelFromResult";
+        LogUtil.log(CLASS_NAME, METHOD_NAME, applicationId: null, message: "Results are fetched and mapping", DEBUG);
+
+        final ObjectMapper mapper = new ObjectMapper();
+        return result.rowsAsObject().stream().map(row -> {
+            try {
+                return mapper.readValue(row.toString(), CouchbaseRetryModel.class);
+            } catch (IOException e) {
+                LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId: null, message: "Failed to map the results", e);
+                return null;
+            }
+        }).collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean updateMetaDataInDocument(String applicationId, int retryCount) {
+        final String METHOD_NAME = "updateMetaDataInDocument";
+
+        String query = "UPDATE `" + bucketName +
+            "` USE KEYS $applicationId" +
+            " SET `" + META_DATA_RETRY_COUNT + "` = $retryCount" +
+            ", `" + SET_EXPIRATION + "` = 0" +
+            ", `" + META_DATA_LAST_MODIFIED + "` = $lastModifiedTime";
+
+        JsonObject placeholderValues = JsonObject.create()
+            .put("applicationId", applicationId)
+            .put("retryCount", retryCount)
+            .put("lastModifiedTime", getLocalTime());
+
+        QueryOptions queryOptions = QueryOptions.queryOptions()
+            .parameters(placeholderValues)
+            .scanConsistency(QueryScanConsistency.REQUEST_PLUS)
+            .timeout(Duration.ofSeconds(120));
+
+        try {
+            QueryResult result = cluster.query(query, queryOptions);
+            return result.metaData().status().toString().equals("SUCCESS");
+        } catch (Exception e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId, "Failed to update", e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean updateDocumentForErrorResolverWI(WriterModel model) {
+        final String METHOD_NAME = "updateDocumentForErrorResolverWI";
+        String applicationId = model.getApplicationId();
+        LogUtil.log(CLASS_NAME, METHOD_NAME, applicationId, "Updating to Error resolver WI ", DEBUG);
+
+        String query = "UPDATE `" + bucketName +
+            "` USE KEYS $applicationId" +
+            " SET `" + STATE + "` = $state" +
+            ", `" + STATUS + "` = $status" +
+            ", `" + SET_EXPIRATION + "` = 0" +
+            ", `" + QUEUE_NAME + "` = $queueName" +
+            ", `" + ERROR_HISTORY + "` = $errorHistory" +
+            ", `" + META_DATA_RETRY_COUNT + "` = $" + RETRY_COUNT +
+            ", `" + META_DATA_LAST_MODIFIED + "` = $" + LAST_MODIFIED_TIME;
+
+        JsonObject placeholderValues = JsonObject.create()
+            .put("applicationId", applicationId)
+            .put("state", model.getState().name())
+            .put("status", model.getStatus().name())
+            .put("queueName", model.getQueueName())
+            .put("errorHistory", JsonArray.from(JsonObject.fromJson(new Gson().toJson(model.getErrors()))))
+            .put(RETRY_COUNT, model.getRetryCount())
+            .put(LAST_MODIFIED_TIME, getLocalTime());
+
+        QueryOptions queryOptions = QueryOptions.queryOptions()
+            .parameters(placeholderValues)
+            .scanConsistency(QueryScanConsistency.REQUEST_PLUS)
+            .timeout(Duration.ofSeconds(120));
+
+        try {
+            QueryResult result = cluster.query(query, queryOptions);
+            return result.metaData().status().toString().equals("SUCCESS");
+        } catch (Exception e) {
+            LogUtil.err(CLASS_NAME, METHOD_NAME, applicationId, "Failed to update", e);
+            return false;
+        }
+    }
+}
+
+
+1. Class Functionality:
+The RetryServiceDaoImpl class is responsible for interacting with a Couchbase database to perform operations related to retrying application processes. It includes methods to find applications for retry, update metadata in documents, and update documents for error resolution.
+
+2. Method Updates:
+a. findApplicationsIdForRetry Method:
+Method Function: This method retrieves a list of documents from the Couchbase database that meet certain criteria for retrying application processes.
+Method Deprecations (Old Code):
+The use of the deprecated SimpleN1qlQuery and N1qlQueryResult classes for querying documents.
+Method Replacement Alternatives:
+Used a SQL-like query string to perform the N1QL query.
+Utilized QueryOptions to specify scan consistency and timeout.
+Executed the query with cluster.query.
+
+b. updateMetaDataInDocument Method:
+Method Function: This method updates the metadata in a specific document with a new retry count.
+Method Deprecations (Old Code):
+The use of Statement and ParameterizedN1qlQuery classes for constructing and executing queries.
+Method Replacement Alternatives:
+Constructed a SQL-like query string with placeholders.
+Created a JsonObject to hold parameter values.
+Utilized QueryOptions to specify scan consistency and timeout.
+Executed the query with cluster.query.
+
+c. updateDocumentForErrorResolverWI Method:
+Method Function: This method updates a document with error resolution information.
+Method Deprecations (Old Code):
+The use of Statement and ParameterizedN1qlQuery classes for constructing and executing queries.
+Method Replacement Alternatives:
+Constructed a SQL-like query string with placeholders.
+Created a JsonObject to hold parameter values.
+Utilized QueryOptions to specify scan consistency and timeout.
+Executed the query with cluster.query.
+
+
+d. queryAndReturnResult Method (Deprecated and Removed):
+Method Function: This method was used for executing N1QL queries and returning results, but it was removed as it was no longer necessary.
+Method Deprecations (Old Code):
+The use of ParameterizedN1qlQuery and N1qlQueryResult classes.
+Method Replacement Alternatives:
+Removed the method and integrated query execution directly within the methods that required it.
+These updates make the class compatible with Couchbase Java SDK version 3.3.4 and use more modern query construction and execution techniques, simplifying the code while maintaining its functionality.
+
+QueryScanConsistency.REQUEST_PLUS, plays an important role in how queries are executed in Couchbase. Let's dive into its use in more detail:
+
+Scan Consistency:
+
+Scan consistency refers to the level of data consistency or isolation you require when querying data from a Couchbase cluster.
+Couchbase provides different scan consistency levels, and you can choose the one that best fits your application's requirements.
+REQUEST_PLUS:
+
+
+QueryScanConsistency.REQUEST_PLUS is one of the scan consistency levels available in Couchbase.
+It is often considered the default and a good choice for most applications.
+This consistency level ensures that the query sees all committed data as of the time when the query was initiated.
+In other words, it guarantees that the query results are consistent with the state of the data at the start of the query and that the query won't see uncommitted changes.
+How It Works:
+
+When you use QueryScanConsistency.REQUEST_PLUS, the query engine will wait until it has caught up to the current state of the data (all previously committed mutations) before returning results.
+This means that the query will not return data that is in the process of being updated or inserted but has not yet been committed.
+It ensures that the query results reflect a consistent view of the data, preventing scenarios where a query might see partially committed changes.
+Use Cases:
+
+REQUEST_PLUS is a good choice for most read operations where strong consistency is required.
+It's suitable for scenarios where you want to ensure that the query results accurately reflect the current committed state of the data.
+It provides a balance between consistency and query performance.
+Other Scan Consistency Levels:
+
+Couchbase offers other scan consistency levels, such as NOT_BOUNDED, AT_PLUS, and UNBOUNDED.
+These levels provide different guarantees of data consistency and are chosen based on the specific requirements of your application.
+In summary, QueryScanConsistency.REQUEST_PLUS is a scan consistency level in Couchbase that ensures strong data consistency for query results. It guarantees that the query sees a snapshot of the data as of the time when the query started, preventing it from returning uncommitted or partially committed data. It's a good choice for many read operations where strong consistency is essential.
+
+
+
+
+
