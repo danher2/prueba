@@ -1,0 +1,108 @@
+import bk.risk.cco.retry.service.util.LogUtil;
+import com.couchbase.client.java.Cluster;
+import com.couchbase.client.java.Bucket;
+import com.usaa.spring.conjur.api.ConjurSecret;
+import com.usaa.spring.conjur.autoconfiguration.CredentialsFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.couchbase.config.AbstractCouchbaseConfiguration;
+import org.springframework.data.couchbase.config.BeanNames;
+import org.springframework.data.couchbase.core.CouchbaseTemplate;
+import org.springframework.data.couchbase.repository.config.EnableCouchbaseRepositories;
+import org.springframework.retry.annotation.EnableRetry;
+import org.springframework.retry.backoff.FixedBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.retry.support.RetryTemplate;
+import org.springframework.util.StringUtils;
+
+import static bk.risk.cco.retry.service.util.LogUtil.Level.INFO;
+
+@Configuration
+@EnableCouchbaseRepositories
+@EnableRetry
+public class CouchbaseConfig extends AbstractCouchbaseConfiguration {
+
+    private static final String CLASS_NAME = CouchbaseConfig.class.getSimpleName();
+    private static final String PHYSICAL_DATACENTER = "PHYSICAL_DATACENTER";
+    private static final String DFW_DATACENTER = "dfw";
+    private final CouchbaseProps props;
+    private ConjurSecret secret;
+
+    @Autowired
+    public CouchbaseConfig(CouchbaseProps props, CredentialsFactory credentialsFactory) {
+        this.props = props;
+        secret = credentialsFactory.getCredentials("couchbase-service-account").block();
+    }
+
+    private static boolean isDfwDataCenter() {
+        String dataCenter = getEnvString(PHYSICAL_DATACENTER, "");
+        return DFW_DATACENTER.equalsIgnoreCase(dataCenter);
+    }
+
+    private static String getEnvString(String key, String defaultValue) {
+        String value = System.getenv().get(key);
+        return StringUtils.isEmpty(value) ? defaultValue : value;
+    }
+
+    @Bean(name = BeanNames.COUCHBASE_TEMPLATE)
+    public CouchbaseTemplate couchbaseTemplate() {
+        return new CouchbaseTemplate(couchbaseClusterInfo(), mappingCouchbaseConverter(), translationService());
+    }
+
+    @Bean(name = "retryTemplateCouchbase")
+    public RetryTemplate retryTemplateCouchbase() {
+        RetryTemplate retryTemplate = new RetryTemplate();
+        FixedBackOffPolicy backOffPolicy = new FixedBackOffPolicy();
+        backOffPolicy.setBackOffPeriod(100);
+        retryTemplate.setBackOffPolicy(backOffPolicy);
+        SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy();
+        retryPolicy.setMaxAttempts(5);
+        retryTemplate.setRetryPolicy(retryPolicy);
+        return retryTemplate;
+    }
+
+    @Override
+    public String getUserName() {
+        return secret.getUserName();
+    }
+
+    @Override
+    public String getPassword() {
+        return secret.getPassword();
+    }
+
+    @Override
+    public String getBucketName() {
+        return props.getBucket();
+    }
+
+    @Override
+    public String getConnectionString() {
+        boolean isDfw = isDfwDataCenter();
+        String hosts = String.join(",", filterValidHosts(isDfw ? props.getDfwHosts() : props.getSatHosts()));
+        return "couchbase://" + hosts;
+    }
+
+    private List<String> filterValidHosts(List<String> actual) {
+        return actual.stream()
+                .map(entry -> entry.replaceAll("\"\"", "").replaceAll(" ", "").trim())
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toList());
+    }
+}
+
+
+Here are the summarized changes made to the CouchbaseConfig class:
+
+Connection String Handling: In Spring Data Couchbase 4.2.0, the getBootstrapHosts method is no longer used. Instead, you directly specify the connection string in the getConnectionString method. This change simplifies connection configuration.
+
+Bucket Configuration: The couchbaseClient method for creating a Bucket is no longer necessary. In the updated code, the Bucket is created automatically when you open it using the Cluster.
+
+Cluster Configuration: The Cluster is now obtained directly from the Spring Data Couchbase framework. You don't need to create it manually. Authentication is typically done by specifying the username and password in the configuration properties, as you have done in the getUserName and getPassword methods.
+
+Retry Template Configuration: The retry template configuration remains the same, as it is not affected by the Spring Data Couchbase version.
+
+Bootstrap Hosts Filtering: The filterValidHosts method has been updated to filter out empty or whitespace-only host entries more effectively.
+
+Overall, these changes align with the updated best practices and conventions for working with Couchbase in Spring Data Couchbase version 4.2.0, making the configuration more straightforward and in line with modern approaches to Couchbase connectivity.
