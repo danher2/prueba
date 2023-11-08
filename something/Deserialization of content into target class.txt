@@ -240,3 +240,268 @@ public class AssessmentCBDocumentTranscoder implements Transcoder {
         }
     }
 }
+
+
+
+========================================
+type adapter
+
+
+import com.google.gson.TypeAdapter;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonWriter;
+
+import java.io.IOException;
+
+public class AssessmentCBDocumentTypeAdapter extends TypeAdapter<AssessmentCBDocument> {
+    @Override
+    public void write(JsonWriter out, AssessmentCBDocument assessment) throws IOException {
+        out.beginObject();
+
+        out.name("id").value(assessment.getId());
+        out.name("status").value(assessment.getStatus());
+        out.name("state").value(assessment.getState());
+        out.name("metaData");
+        // Serialize MetaData if applicable...
+
+        out.name("queueName").value(assessment.getQueueName());
+
+        out.name("errorHistory");
+        out.beginArray();
+        for (Error error : assessment.getErrorHistory()) {
+            out.value(error.getErrorField());
+        }
+        out.endArray();
+
+        out.name("services");
+        // Serialize Services if applicable...
+
+        out.name("muwSummaryAction");
+        out.beginArray();
+        for (MUWSummaryDecision summaryDecision : assessment.getMuwSummaryAction()) {
+            out.value(summaryDecision.getDecisionField());
+        }
+        out.endArray();
+
+        out.name("muwFraudAction");
+        out.beginArray();
+        for (MUWFraudDecision fraudDecision : assessment.getMuwFraudAction()) {
+            out.value(fraudDecision.getFraudField());
+        }
+        out.endArray();
+
+        out.name("muwBureauAlertAction");
+        out.beginArray();
+        for (MUWBureauAlertDecision bureauAlertDecision : assessment.getMuwBureauAlertAction()) {
+            out.value(bureauAlertDecision.getBureauAlertField());
+        }
+        out.endArray();
+
+        out.name("muwErrorResolverAction");
+        out.beginArray();
+        for (MUWErrorResolverDecision errorResolverDecision : assessment.getMuwErrorResolverAction()) {
+            out.value(errorResolverDecision.getErrorResolverField());
+        }
+        out.endArray();
+
+        out.name("kbaDecisions");
+        out.beginArray();
+        for (MUWKbaDecision kbaDecision : assessment.getKbaDecisions()) {
+            out.value(kbaDecision.getKbaField());
+        }
+        out.endArray();
+
+        // Serialize other fields...
+
+        out.name("cco");
+        // Serialize Assessment cco field if applicable.
+
+        out.name("tradeLine");
+        // Serialize Trade Line field if applicable.
+
+        out.name("comments");
+        // Serialize Comments field if applicable.
+
+        out.name("raiInfo");
+        // Serialize RAIInfo field if applicable.
+
+        out.name("archive");
+        // Serialize Archive field if applicable.
+
+        out.name("proposedTerms");
+        // Serialize Proposed Terms field if applicable.
+
+        out.name("pend");
+        // Serialize PEND field if applicable.
+
+        out.name("counteroffers");
+        // Serialize Counteroffers field if applicable.
+
+        out.name("suppressAAN").value(assessment.isSuppressAAN());
+        out.name("systemCounteroffer").value(assessment.isSystemCounteroffer());
+
+        out.name("applicationHistory");
+        out.beginArray();
+        for (Comments applicationHistory : assessment.getApplicationHistory()) {
+            // Serialize Application History if applicable.
+        }
+        out.endArray();
+
+        out.name("completedon").value(assessment.getCompletedon());
+        out.name("underwriterRequest");
+        // Serialize Underwriter Request field if applicable.
+
+        out.endObject();
+    }
+
+    @Override
+    public AssessmentCBDocument read(JsonReader in) throws IOException {
+        AssessmentCBDocument assessment = new AssessmentCBDocument();
+        in.beginObject();
+
+        while (in.hasNext()) {
+            String fieldName = in.nextName();
+            switch (fieldName) {
+                case "id":
+                    assessment.setId(in.nextString());
+                    break;
+                case "status":
+                    assessment.setStatus(in.nextString());
+                    break;
+                case "state":
+                    assessment.setState(in.nextString());
+                    break;
+                case "metaData":
+                    // Deserialize MetaData if applicable...
+                    break;
+                case "queueName":
+                    assessment.setQueueName(in.nextString());
+                    break;
+                case "errorHistory":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        Error error = new Error();
+                        error.setErrorField(in.nextString());
+                        assessment.getErrorHistory().add(error);
+                    }
+                    in.endArray();
+                    break;
+                case "services":
+                    // Deserialize Services if applicable...
+                    break;
+                case "muwSummaryAction":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        MUWSummaryDecision summaryDecision = new MUWSummaryDecision();
+                        summaryDecision.setDecisionField(in.nextString());
+                        assessment.getMuwSummaryAction().add(summaryDecision);
+                    }
+                    in.endArray();
+                    break;
+                case "muwFraudAction":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        MUWFraudDecision fraudDecision = new MUWFraudDecision();
+                        fraudDecision.setFraudField(in.nextString());
+                        assessment.getMuwFraudAction().add(fraudDecision);
+                    }
+                    in.endArray();
+                    break;
+                case "muwBureauAlertAction":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        MUWBureauAlertDecision bureauAlertDecision = new MUWBureauAlertDecision();
+                        bureauAlertDecision.setBureauAlertField(in.nextString());
+                        assessment.getMuwBureauAlertAction().add(bureauAlertDecision);
+                    }
+                    in.endArray();
+                    break;
+                case "muwErrorResolverAction":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        MUWErrorResolverDecision errorResolverDecision = new MUWErrorResolverDecision();
+                        errorResolverDecision.setErrorResolverField(in.nextString());
+                        assessment.getMuwErrorResolverAction().add(errorResolverDecision);
+                    }
+                    in.endArray();
+                    break;
+                case "kbaDecisions":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        MUWKbaDecision kbaDecision = new MUWKbaDecision();
+                        kbaDecision.setKbaField(in.nextString());
+                        assessment.getKbaDecisions().add(kbaDecision);
+                    }
+                    in.endArray();
+                    break;
+                // Deserialize other fields...
+                case "cco":
+                    // Deserialize cco field if applicable.
+                    break;
+                case "tradeLine":
+                    // Deserialize Trade Line field if applicable.
+                    break;
+                case "comments":
+                    // Deserialize Comments field if applicable.
+                    break;
+                case "raiInfo":
+                    // Deserialize RAIInfo field if applicable.
+                    break;
+                case "archive":
+                    // Deserialize Archive field if applicable.
+                    break;
+                case "proposedTerms":
+                    // Deserialize Proposed Terms field if applicable.
+                    break;
+                case "pend":
+                    // Deserialize PEND field if applicable.
+                    break;
+                case "counteroffers":
+                    // Deserialize Counteroffers field if applicable.
+                    break;
+                case "suppressAAN":
+                    assessment.setSuppressAAN(in.nextBoolean());
+                    break;
+                case "systemCounteroffer":
+                    assessment.setSystemCounteroffer(in.nextBoolean());
+                    break;
+                case "applicationHistory":
+                    in.beginArray();
+                    while (in.hasNext()) {
+                        Comments applicationHistory = new Comments();
+                        // Deserialize Application History if applicable.
+                    }
+                    in.endArray();
+                    break;
+                case "completedon":
+                    assessment.setCompletedon(in.nextString());
+                    break;
+                case "underwriterRequest":
+                    // Deserialize Underwriter Request field if applicable.
+                    break;
+                default:
+                    in.skipValue(); // Ignore unknown fields
+                    break;
+            }
+        }
+
+        in.endObject();
+
+        return assessment;
+    }
+}
+
+
+
+
+
+
+Please note that this example provides a basic outline for serializing and deserializing the simple fields of the AssessmentCBDocument class. You should customize this code to handle the more complex fields like muwSummaryAction, muwFraudAction, muwBureauAlertAction, etc., according to your actual data structure and how you want to represent them in JSON.
+
+To use the custom TypeAdapter, you'll need to register it with your Gson instance:
+
+java
+Copy code
+Gson gson = new GsonBuilder()
+    .registerTypeAdapter(AssessmentCBDocument.class, new AssessmentCBDocumentTypeAdapter())
+    .create();
