@@ -184,3 +184,59 @@ public class AssessmentCBDocumentTranscoder implements Transcoder<AssessmentCBDo
     // Additional methods may be overridden based on your specific needs.
 
 }
+============================================
+
+import com.couchbase.client.java.codec.Transcoder;
+import com.couchbase.client.java.codec.Transcoder.EncodedValue;
+import com.couchbase.client.core.error.DecodingFailureException;
+import com.couchbase.client.java.json.JsonSerializer;
+import com.couchbase.client.java.json.JsonArray;
+import com.couchbase.client.java.json.JsonObject;
+import com.couchbase.client.java.json.JsonHelper;
+
+public class AssessmentCBDocumentTranscoder implements Transcoder {
+
+    private final JsonSerializer serializer;
+
+    public AssessmentCBDocumentTranscoder(JsonSerializer serializer) {
+        this.serializer = serializer;
+    }
+
+    @Override
+    public EncodedValue encode(Object object) {
+        // Implement the serialization logic here to convert the object to a byte array.
+        // You should use the provided object and serialize it into a byte array.
+        // You can use the provided serializer or any other serialization method you prefer.
+
+        // For example, if the object is of type JsonObject or JsonArray, you can use the serializer like this:
+        if (object instanceof JsonObject) {
+            byte[] encoded = serializer.serialize((JsonObject) object);
+            return new EncodedValue(encoded, 0);
+        } else if (object instanceof JsonArray) {
+            byte[] encoded = serializer.serialize((JsonArray) object);
+            return new EncodedValue(encoded, 0);
+        } else {
+            // Handle other data types as needed.
+            throw new UnsupportedOperationException("Unsupported data type for encoding");
+        }
+    }
+
+    @Override
+    public <T> T decode(Class<T> target, byte[] input, int flags) {
+        // Implement the deserialization logic here to convert the byte array to an object of the target class.
+        // You should use the provided byte array and deserialize it into an object of the target class.
+        // You can use the provided serializer or any other deserialization method you prefer.
+
+        // For example, you can use the serializer like this:
+        if (target == JsonObject.class) {
+            JsonObject decoded = serializer.deserializeJsonObject(input);
+            return target.cast(decoded);
+        } else if (target == JsonArray.class) {
+            JsonArray decoded = serializer.deserializeJsonArray(input);
+            return target.cast(decoded);
+        } else {
+            // Handle other data types as needed.
+            throw new UnsupportedOperationException("Unsupported data type for decoding");
+        }
+    }
+}
