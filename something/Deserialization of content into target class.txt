@@ -97,3 +97,39 @@ Data Transformation:
 
 In some cases, you might need to transform or adapt the data in the GetResult to match the structure expected by the AssessmentCBDocument class before attempting deserialization.
 By addressing the potential issues mentioned above and performing careful debugging, you should be able to identify the root cause of the deserialization failure and work towards a solution. If you have specific error messages or details from the exception stack trace, they can be helpful in pinpointing the exact problem.
+
+===================================
+import com.couchbase.client.java.kv.GetResult;
+import com.couchbase.client.java.codec.Transcoder;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
+public class AssessmentCBDocumentTranscoder implements Transcoder<AssessmentCBDocument> {
+    private final ObjectMapper objectMapper;
+
+    public AssessmentCBDocumentTranscoder() {
+        objectMapper = new ObjectMapper();
+        // Configure the ObjectMapper to ignore unknown properties during deserialization.
+        objectMapper.configure(SerializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
+
+    @Override
+    public AssessmentCBDocument decode(byte[] bytes, int flags) {
+        try {
+            // Deserialize the byte array into an AssessmentCBDocument object using Jackson.
+            return objectMapper.readValue(bytes, AssessmentCBDocument.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to deserialize AssessmentCBDocument", e);
+        }
+    }
+
+    @Override
+    public byte[] encode(AssessmentCBDocument assessment) {
+        try {
+            // Serialize the AssessmentCBDocument object into a byte array using Jackson.
+            return objectMapper.writeValueAsBytes(assessment);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize AssessmentCBDocument", e);
+        }
+    }
+}
