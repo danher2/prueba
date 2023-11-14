@@ -587,3 +587,17 @@ public class OptionalInstantDeserializer extends JsonDeserializer<Optional<Insta
         return Optional.empty();
     }
 }
+
+
+
+/**
+ * Sets the time-to-live (TTL) information for the provided {@code AssessmentCBDocument}
+ * based on the expiration time obtained from the given {@code GetResult}.
+ *
+ * <p>If the {@code GetResult} has an expiration time, it is used to set the TTL for
+ * the metadata of the {@code AssessmentCBDocument}. If the metadata is not present in
+ * the document, a new metadata instance is created.
+ *
+ * @param getResult           The GetResult containing information about the document, including expiration time.
+ * @param assessmentCBDocument The AssessmentCBDocument for which to set the time-to-live (TTL) information.
+ */
