@@ -505,3 +505,85 @@ Copy code
 Gson gson = new GsonBuilder()
     .registerTypeAdapter(AssessmentCBDocument.class, new AssessmentCBDocumentTypeAdapter())
     .create();
+
+
+
+
+
+
+/**
+ * Retrieves an application based on the provided application ID.
+ *
+ * This method fetches the application data from a data store using the specified application ID. The retrieved data is
+ * processed as JSON and mapped to an {@code AssessmentCBDocument} object. Additionally, time-to-live (TTL) information
+ * is set based on the retrieved data. If the document is not found, an {@code ApplicationNotFoundException} is thrown.
+ * If there is an issue with the data store (e.g., CouchbaseException), a {@code DatabaseException} is thrown.
+ *
+ * @param applicationId The unique identifier of the application to retrieve.
+ * @return An {@code AssessmentCBDocument} representing the application data.
+ * @throws ApplicationNotFoundException If the application with the specified ID is not found.
+ * @throws DatabaseException             If there is an issue with the underlying database.
+ * @throws RuntimeException             If an unexpected IOException occurs during JSON processing.
+ */
+@Override
+public AssessmentCBDocument getApplication(final String applicationId) {
+    // Method implementation
+}
+
+
+
+
+
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.Optional;
+
+/**
+ * Custom JSON deserializer for {@code Optional<Instant>} using Jackson.
+ * This deserializer is designed to handle the deserialization of JSON representations
+ * into {@code Optional<Instant>} objects.
+ *
+ * <p>The primary purpose of this deserializer is to provide a mechanism for handling
+ * optional Instant fields during JSON deserialization. If the deserialization process
+ * encounters an issue or if the data is not available, an empty {@code Optional} is returned.
+ *
+ * <p>Note: This deserializer includes a placeholder read operation ({@code p.readValueAsTree()})
+ * to address potential issues with other mappings during deserialization.
+ *
+ * <p>Usage Example:
+ * <pre>
+ * {@code
+ * ObjectMapper objectMapper = new ObjectMapper();
+ * SimpleModule module = new SimpleModule();
+ * module.addDeserializer(Optional.class, new OptionalInstantDeserializer());
+ * objectMapper.registerModule(module);
+ * }
+ * </pre>
+ *
+ * @see JsonDeserializer
+ */
+@Slf4j
+@NoArgsConstructor
+public class OptionalInstantDeserializer extends JsonDeserializer<Optional<Instant>> {
+
+    /**
+     * Deserialize JSON content into an {@code Optional<Instant>} object.
+     *
+     * @param p      The JsonParser object providing the input data.
+     * @param ctxt   The DeserializationContext.
+     * @return An {@code Optional<Instant>} representing the deserialized value.
+     * @throws IOException If an I/O error occurs during deserialization.
+     */
+    @Override
+    public Optional<Instant> deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+        log.info("Entered OptionalInstantDeserializer");
+        p.readValueAsTree(); // Placeholder read to address potential issues with other mappings
+        return Optional.empty();
+    }
+}
