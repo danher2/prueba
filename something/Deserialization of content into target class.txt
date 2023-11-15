@@ -601,3 +601,57 @@ public class OptionalInstantDeserializer extends JsonDeserializer<Optional<Insta
  * @param getResult           The GetResult containing information about the document, including expiration time.
  * @param assessmentCBDocument The AssessmentCBDocument for which to set the time-to-live (TTL) information.
  */
+
+
+
+
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import java.time.Duration;
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.when;
+
+class YourClassTest {
+
+    @Test
+    void testSetTtlWithExpiry() {
+        // Arrange
+        YourClass yourClass = new YourClass();  // Replace YourClass with the actual class containing setTtl
+        GetResult getResult = Mockito.mock(GetResult.class);
+        AssessmentCBDocument assessmentCBDocument = new AssessmentCBDocument();
+
+        // Set up a future expiration time for testing
+        Instant futureExpiry = Instant.now().plus(Duration.ofDays(1));
+        when(getResult.expiryTime()).thenReturn(Optional.of(futureExpiry));
+
+        // Act
+        yourClass.setTtl(getResult, assessmentCBDocument);
+
+        // Assert
+        assertNotNull(assessmentCBDocument.getMetaData());
+        assertEquals(futureExpiry, assessmentCBDocument.getMetaData().getExpiry());
+    }
+
+    @Test
+    void testSetTtlWithoutExpiry() {
+        // Arrange
+        YourClass yourClass = new YourClass();  // Replace YourClass with the actual class containing setTtl
+        GetResult getResult = Mockito.mock(GetResult.class);
+        AssessmentCBDocument assessmentCBDocument = new AssessmentCBDocument();
+
+        // No expiration time in the GetResult
+        when(getResult.expiryTime()).thenReturn(Optional.empty());
+
+        // Act
+        yourClass.setTtl(getResult, assessmentCBDocument);
+
+        // Assert
+        // Check that metadata is not created when there is no expiry time
+        assertNull(assessmentCBDocument.getMetaData());
+    }
+}
+
