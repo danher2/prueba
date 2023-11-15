@@ -655,3 +655,70 @@ class YourClassTest {
     }
 }
 
+
+
+
+
+@Test
+void testDeserializeWithExpiry() throws IOException {
+    // Arrange
+    JsonFactory jsonFactory = new JsonFactory();
+    JsonParser jsonParser = jsonFactory.createParser("{\"expiration\":\"2023-11-17T12:34:56Z\"}");
+
+    DeserializationContext deserializationContext = mock(DeserializationContext.class);
+
+    OptionalInstantDeserializer deserializer = new OptionalInstantDeserializer();
+
+    // Act
+    Optional<Instant> result = deserializer.deserialize(jsonParser, deserializationContext);
+
+    // Assert
+    assertEquals(Instant.parse("2023-11-17T12:34:56Z"), result.orElse(null));
+}
+
+
+Arrange: In this section, you set up the necessary objects for testing.
+
+JsonFactory and JsonParser are used to simulate a JSON input with an expiration time.
+DeserializationContext is mocked using Mockito to provide a mock context for deserialization.
+An instance of OptionalInstantDeserializer is created, representing the class under test.
+Act: This is the part where the method under test (deserialize) is invoked.
+
+The deserialize method is called with the mock JsonParser and DeserializationContext.
+Assert: In this section, you check whether the method behaves as expected.
+
+assertEquals(Instant.parse("2023-11-17T12:34:56Z"), result.orElse(null));: Verifies that the deserialize method correctly returns an Optional<Instant> containing the expected expiration time.
+
+
+@Test
+void testDeserializeWithoutExpiry() throws IOException {
+    // Arrange
+    JsonFactory jsonFactory = new JsonFactory();
+    JsonParser jsonParser = jsonFactory.createParser("{}");
+
+    DeserializationContext deserializationContext = mock(DeserializationContext.class);
+
+    OptionalInstantDeserializer deserializer = new OptionalInstantDeserializer();
+
+    // Act
+    Optional<Instant> result = deserializer.deserialize(jsonParser, deserializationContext);
+
+    // Assert
+    assertEquals(Optional.empty(), result);
+}
+
+
+
+Arrange: Similar to the previous test, this section sets up the necessary objects for testing.
+
+JsonFactory and JsonParser are used to simulate a JSON input without an expiration time.
+DeserializationContext is mocked using Mockito to provide a mock context for deserialization.
+An instance of OptionalInstantDeserializer is created.
+Act: The deserialize method is called with the mock JsonParser and DeserializationContext.
+
+Assert: This section checks whether the method behaves as expected.
+
+assertEquals(Optional.empty(), result);: Verifies that the deserialize method correctly returns an empty Optional<Instant> when there is no expiration time in the JSON input.
+In summary, these test methods verify the behavior of the OptionalInstantDeserializer class under different scenarios: one where the JSON input contains an expiration time and another where it does not. These tests ensure that the deserialization logic correctly produces the expected Optional<Instant> based on the provided JSON input.
+
+
