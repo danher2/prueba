@@ -1,0 +1,28 @@
+   @Test
+    void testCreditLimitUpdateIncrementSuccess() {
+        // Mocking the service response
+        String mockResponse = "Success";
+        when(creditLimitUpdateService.executeCULWebClient(Mockito.any())).thenReturn(mockResponse);
+
+        // Call the controller method
+        CreditCardEventDTO mockPayload = new CreditCardEventDTO(/* provide necessary details */);
+        ResponseEntity<String> responseEntity = creditLimitUpdateController.CreditLimitUpdateIncrement(mockPayload);
+
+        // Verify the response
+        assertEquals(HttpStatus.OK, responseEntity.getStatusCode());
+        assertEquals(mockResponse, responseEntity.getBody());
+    }
+
+    @Test
+    void testCreditLimitUpdateIncrementFailure() {
+        // Mocking the service response for failure scenario
+        when(creditLimitUpdateService.executeCULWebClient(Mockito.any())).thenReturn(null);
+
+        // Call the controller method
+        CreditCardEventDTO mockPayload = new CreditCardEventDTO(/* provide necessary details */);
+        ResponseEntity<String> responseEntity = creditLimitUpdateController.CreditLimitUpdateIncrement(mockPayload);
+
+        // Verify the response for failure scenario
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, responseEntity.getStatusCode());
+    }
+}
