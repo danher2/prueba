@@ -25,4 +25,66 @@
         // Verify the response for failure scenario
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, responseEntity.getStatusCode());
     }
+
+
+
+
+}
+
+
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.*;
+
+@SpringBootTest
+class MyServiceTest {
+
+    @MockBean
+    private WebClient cardAccountSvcWebClient;
+
+    @Autowired
+    private MyService myService;
+
+    @Test
+    void testExecuteCULWebClient() {
+        // Mocking
+        CreditCardEventDTO mockPayload = new CreditCardEventDTO(/* provide necessary details */);
+        String expectedResponse = "MockedResponse";
+
+        when(cardAccountSvcWebClient.post()).thenReturn(mock(WebClient.RequestHeadersUriSpec.class));
+        when(cardAccountSvcWebClient.post().uri(any())).thenReturn(mock(WebClient.RequestBodyUriSpec.class));
+        when(cardAccountSvcWebClient.post().uri(any()).bodyValue(any())).thenReturn(mock(WebClient.RequestHeadersSpec.class));
+        when(cardAccountSvcWebClient.post().uri(any()).bodyValue(any()).retrieve()).thenReturn(mock(WebClient.ResponseSpec.class));
+        when(cardAccountSvcWebClient.post().uri(any()).bodyValue(any()).retrieve().bodyToMono(String.class)).thenReturn(mockResponseMono(expectedResponse));
+        when(cardAccountSvcWebClient.post().uri(any()).bodyValue(any()).retrieve().bodyToMono(String.class).block()).thenReturn(expectedResponse);
+
+        // Set the private field cardAccountSvcEndpoint using ReflectionTestUtils
+        ReflectionTestUtils.setField(myService, "cardAccountSvcEndpoint", "http://example.com/api");
+
+        // Test the method
+        String actualResponse = myService.executeCULWebClient(mockPayload);
+
+        // Verify
+        assertEquals(expectedResponse, actualResponse);
+
+        // Verify that the WebClient methods were called
+        verify(cardAccountSvcWebClient.post(), times(1)).uri(any());
+        verify(cardAccountSvcWebClient.post().uri(any()).bodyValue(any()), times(1)).retrieve();
+        verify(cardAccountSvcWebClient.post().uri(any()).bodyValue(any()).retrieve().bodyToMono(String.class), times(1)).block();
+    }
+
+    // Helper method to mock WebClient.ResponseSpec.bodyToMono(String.class)
+    private <T> WebClient.ResponseSpec mockResponseMono(T body) {
+        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
+        when(responseSpec.bodyToMono(String.class)).thenReturn(mock(WebClient.ResponseSpec.class));
+        when(responseSpec.bodyToMono(String.class).block()).thenReturn(body);
+        return responseSpec;
+    }
 }
