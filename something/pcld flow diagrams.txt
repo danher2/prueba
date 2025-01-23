@@ -1,0 +1,74 @@
+[11:04 AM, 1/23/2025] Danher: @startuml
+actor BKApp as "BK-App"
+
+BKApp -> "Account Validator": Execute
+"Account Validator" -> "Bank Middleware Service": Get account details and transactions
+
+BKApp -> "Update Credit Limit": Execute
+"Update Credit Limit" -> "First Data": Update credit limit
+
+alt Eligible for Product Code Update
+    BKApp -> "Update Product Code": Execute
+    "Update Product Code" -> "First Data": Update product code
+end
+
+BKApp -> "Add Memo": Execute
+"Add Memo" -> "First Data": Add memo
+
+BKApp -> "Save Successfully Accounts": Execute
+
+BKApp -> "Kafka Producer (Start Event)": Send Start Event to BIM Topic
+
+BKApp -> "BCLD Letter Generation": Execute
+"BCLD Letter Generation" -> "Bank Middleware": Call service
+"BCLD Letter Generation" -> "ERDC": Call service
+"BCLD Letter Generation" -> "Hercules": Generate letter
+
+alt Hercules Call Failed
+    BKApp -> "Kafka Producer (Fail Event)": Send Fail Event to BIM Topic
+end
+@enduml
+[11:05 AM, 1/23/2025] Danher: @startuml
+|BK-App|
+
+start
+|Account Validator|
+:Account Validator;
+:Call Bank Middleware Service;
+
+|Update Credit Limit|
+:Update Credit Limit;
+:Call First Data to update credit limit;
+
+if (Eligible for Product Code Update?) then (Yes)
+    |Update Product Code|
+    :Update Product Code;
+    :Call First Data to update product code;
+else (No)
+endif
+
+|Add Memo|
+:Add Memo;
+:Call First Data to add memo;
+
+|Save Successfully Accounts|
+:Save Successfully Accounts;
+
+|Kafka Producer (Start Event)|
+:Kafka Producer;
+:Send "Start Event" to BIM Topic;
+
+|BCLD Letter Generation|
+:BCLD Letter Generation;
+:Call Bank Middleware, ERDC, and Hercules;
+
+if (Hercules Call Successful?) then (Yes)
+    stop
+else (No)
+    |Kafka Producer (Fail Event)|
+    :Kafka Producer;
+    :Send "Fail Event" to BIM Topic;
+endif
+
+stop
+@enduml
