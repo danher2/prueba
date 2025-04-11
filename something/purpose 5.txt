@@ -257,3 +257,13 @@ AsyncProducer: Optimized for a single message with settings like Producer.MaxMes
 Kerberos and TLS Overhead (Unchanged but Contextualized):
 SyncProducer: Kerberos (GSSAPI) and TLS configurations added 1-2MB of fixed overhead (500KB-1MB each) for authentication sessions and TLS state, which was significant for a single message.
 AsyncProducer: Kerberos and TLS overhead remains the same (1-2MB), but the overall memory footprint is lower (1-2MB total), making this fixed cost less impactful proportionally. We also disabled TLS session caching (SessionTicketsDisabled: true) to save a small amount of memory (~100-500KB).
+
+
+Producer.MaxMessageBytes (Default: 1MB)
+How It Allocated Unnecessary Memory: This setting defines the maximum size of a single message the producer can send. The default of 1MB meant Sarama pre-allocated a 1MB buffer to handle potential messages, even though your single message was small (~100 bytes, including headers). This resulted in ~1MB of unused memory allocation per execution.
+Producer.Flush.Messages (Default: 1, but batching still enabled)
+How It Allocated Unnecessary Memory: This setting controls how many messages the producer buffers before flushing to Kafka. While the default is 1, Sarama’s batching mechanism still allocated memory for a batch (e.g., ~100KB-500KB) to handle potential multiple messages, which was unnecessary since you only sent one message per invocation.
+Producer.Flush.Bytes (Default: 1MB)
+How It Allocated Unnecessary Memory: This setting determines the total size of messages (in bytes) the producer buffers before flushing. The default of 1MB meant Sarama reserved a buffer capable of holding 1MB of messages, even though your single message was much smaller. This contributed another ~1MB of unused memory allocation.
+Producer.Flush.Frequency (Default: 500ms, indirectly affecting buffering)
+How It Allocated Unnecessary Memory: This setting controls how often the producer flushes its buffer if the Flush.Messages or Flush.Bytes thresholds aren’t met. While not a direct buffer allocation, it enabled batching behavior, causing Sarama to maintain a buffer (e.g., ~100KB-500KB) for potential messages during the 500ms window, which was unnecessary for a single-message workload.
