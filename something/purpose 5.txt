@@ -203,3 +203,57 @@ Optimized Metadata Fetching: ~0.5-1MB (reduces metadata memory usage)
 Simplified Retry Logic: ~0.1-0.2MB (removes retry overhead)
 TLS Optimization: ~0.1-0.5MB (disables session caching, trims certificate chain)
 Total Estimated Memory Usage After Optimizations: With these changes, you might reduce memory usage to around 1-2MB, which is much more reasonable for a single-message workload.
+
+. Switch to an Async Producer
+Why:
+A synchronous producer (NewSyncProducerFromClient) with Producer.Return.Successes = true is overkill for sending a single message. It allocates memory for tracking in-flight messages and waiting for acknowledgments, which isn’t necessary for your use case.
+An async producer (NewAsyncProducerFromClient) sends messages asynchronously and doesn’t block waiting for acknowledgments. This reduces memory usage because Sarama doesn’t need to allocate buffers for tracking in-flight messages.
+You can still ensure the message is sent successfully by reading from the producer’s Successes and Errors channels, which is lightweight for a single message.
+
+
+Expected Memory Reduction
+Switch to Async Producer: ~1-2MB (eliminates sync producer overhead)
+Minimized Buffer Sizes: ~1-2MB (reduces unnecessary buffer allocations)
+Optimized Metadata Fetching: ~0.5-1MB (reduces metadata memory usage)
+Simplified Retry Logic: ~0.1-0.2MB (removes retry overhead)
+TLS Optimization: ~0.1-0.5MB (disables session caching, trims certificate chain)
+Total Estimated Memory Usage After Optimizations: With these changes, you might reduce memory usage to around 1-2MB, which is much more reasonable for a single-message workload.
+
+
+Problem
+Our Beam producer, designed to send 1 event per invocation, was consuming significant memory which is excessive for such a small workload.
+
+Running pcli 50k and pcld 2k at the same time (show run)
+
+Identify significant consumed memory on pcld, Max memory used 187 (show logs insigts)
+
+logs were added to track functions consuming significant amount of memory
+
+—around 6 to 9MB— are consumed in this 2 functions
+
+why
+
+Producer Type and Sending Mechanism:
+SyncProducer (Original): Used sarama.NewSyncProducerFromClient to create a synchronous producer. It sent messages via SendMessage, which blocked until the Kafka broker acknowledged the message, ensuring immediate confirmation but introducing latency in the main thread.
+AsyncProducer (Current): Uses sarama.NewAsyncProducerFromClient to create an asynchronous producer. It sends messages via the Input() channel, offloading delivery to a background goroutine, and doesn’t block the main thread, making it more efficient for non-blocking workflows.
+
+
+Memory Usage:
+SyncProducer: Consumed 6-9MB due to over-provisioned buffers (e.g., Producer.MaxMessageBytes defaulting to 1MB), synchronous operation overhead (state tracking for in-flight messages, ~1-2MB), and metadata fetching (500KB-1MB). This was excessive for a single event.
+AsyncProducer: Reduced memory usage to 1-2MB by minimizing buffering (e.g., Producer.MaxMessageBytes = 10240, Producer.Flush.Messages = 1), eliminating synchronous state tracking, and optimizing metadata (Metadata.Full = false), better aligning with a single-message workload.
+
+Flushing Behavior:
+SyncProducer: Flushed messages automatically as part of the synchronous send, ensuring the message was sent before returning control, but this added overhead and blocking time.
+AsyncProducer: Buffers messages and flushes based on configuration (Producer.Flush.Messages = 1 ensures immediate flush for 1 message). We added close(producer.Input()) in SendSingleMessage to force a flush, ensuring the message is sent promptly without relying on batching.
+
+Retry Logic:
+SyncProducer: Included retry.Do in BuildProducerWithRetry with 3 attempts and a 5-second delay, adding 100KB-2MB of overhead (during retries) and creating new client/producer instances if retries triggered, increasing memory usage temporarily.
+AsyncProducer: Removed retry logic in the new BuildProducer function, as retries aren’t necessary for a single-message workload. Failures are now handled by the Errors() channel, reducing memory overhead and simplifying the setup.
+
+Configuration Optimizations:
+SyncProducer: Used default Sarama settings, which were over-provisioned (e.g., 1MB buffers, frequent metadata refreshes), and lacked specific optimizations for a single message, contributing to higher memory usage.
+AsyncProducer: Optimized for a single message with settings like Producer.MaxMessageBytes = 10240, Producer.Flush.Messages = 1, Metadata.Full = false, and Metadata.Refresh.Frequency = 1 * time.Hour. Added connection timeouts (Net.DialTimeout = 10 * time.Second) and compression (Producer.Compression = sarama.CompressionGZIP) for efficiency.
+
+Kerberos and TLS Overhead (Unchanged but Contextualized):
+SyncProducer: Kerberos (GSSAPI) and TLS configurations added 1-2MB of fixed overhead (500KB-1MB each) for authentication sessions and TLS state, which was significant for a single message.
+AsyncProducer: Kerberos and TLS overhead remains the same (1-2MB), but the overall memory footprint is lower (1-2MB total), making this fixed cost less impactful proportionally. We also disabled TLS session caching (SessionTicketsDisabled: true) to save a small amount of memory (~100-500KB).
