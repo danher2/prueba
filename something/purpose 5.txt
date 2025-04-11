@@ -188,3 +188,18 @@ Optimized Metadata Fetching: ~0.5-1MB (reduces metadata memory usage)
 Simplified Retry Logic: ~0.1-0.2MB (removes retry overhead)
 TLS Optimization: ~0.1-0.5MB (disables session caching, trims certificate chain)
 Total Estimated Memory Usage After Optimizations: With these changes, you might reduce memory usage to around 1-2MB, which is much more reasonable for a single-message workload.
+
+. Switch to an Async Producer
+Why:
+A synchronous producer (NewSyncProducerFromClient) with Producer.Return.Successes = true is overkill for sending a single message. It allocates memory for tracking in-flight messages and waiting for acknowledgments, which isn’t necessary for your use case.
+An async producer (NewAsyncProducerFromClient) sends messages asynchronously and doesn’t block waiting for acknowledgments. This reduces memory usage because Sarama doesn’t need to allocate buffers for tracking in-flight messages.
+You can still ensure the message is sent successfully by reading from the producer’s Successes and Errors channels, which is lightweight for a single message.
+
+
+Expected Memory Reduction
+Switch to Async Producer: ~1-2MB (eliminates sync producer overhead)
+Minimized Buffer Sizes: ~1-2MB (reduces unnecessary buffer allocations)
+Optimized Metadata Fetching: ~0.5-1MB (reduces metadata memory usage)
+Simplified Retry Logic: ~0.1-0.2MB (removes retry overhead)
+TLS Optimization: ~0.1-0.5MB (disables session caching, trims certificate chain)
+Total Estimated Memory Usage After Optimizations: With these changes, you might reduce memory usage to around 1-2MB, which is much more reasonable for a single-message workload.
