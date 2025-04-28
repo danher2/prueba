@@ -267,3 +267,12 @@ Producer.Flush.Bytes (Default: 1MB)
 How It Allocated Unnecessary Memory: This setting determines the total size of messages (in bytes) the producer buffers before flushing. The default of 1MB meant Sarama reserved a buffer capable of holding 1MB of messages, even though your single message was much smaller. This contributed another ~1MB of unused memory allocation.
 Producer.Flush.Frequency (Default: 500ms, indirectly affecting buffering)
 How It Allocated Unnecessary Memory: This setting controls how often the producer flushes its buffer if the Flush.Messages or Flush.Bytes thresholds aren’t met. While not a direct buffer allocation, it enabled batching behavior, causing Sarama to maintain a buffer (e.g., ~100KB-500KB) for potential messages during the 500ms window, which was unnecessary for a single-message workload.
+
+
+ "optionalField": {
+      "Fn::If": [
+        { "Fn::Not": [{ "Fn::Contains": [ { "Fn::GetAtt": [ "InputJSON", "optionalField" ] }, ""] }, "ValueIfTrue",
+        "ValueIfFalse"
+      ]
+    }
+  }
