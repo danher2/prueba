@@ -1,204 +1,15 @@
 {
   "Comment": "Distributed map that reads CSV file for order data and detects delayed orders",
-  "StartAt": "Preprocess Input",
+  "StartAt": "Get records to REMEDIATE Letter",
   "States": {
-    "Preprocess Input": {
-      "Type": "Pass",
-      "Parameters": {
-        "Id": {
-          "S.$": "$.Id.S ?? ''"
-        },
-        "AccountDetails": {
-          "M": {
-            "IdClaim": {
-              "S.$": "$.AccountDetails.M.IdClaim.S ?? ''"
-            },
-            "NewCreditLimit": {
-              "S.$": "$.AccountDetails.M.NewCreditLimit.S ?? ''"
-            },
-            "OldCreditLimit": {
-              "S.$": "$.AccountDetails.M.OldCreditLimit.S ?? ''"
-            },
-            "JointAccountIndicator": {
-              "Bool.$": "$.AccountDetails.M.JointAccountIndicator.Bool ?? false"
-            },
-            "ErrorMessage": {
-              "S.$": "$.AccountDetails.M.ErrorMessage.S ?? ''"
-            },
-            "PendingTransactionAmount": {
-              "S.$": "$.AccountDetails.M.PendingTransactionAmount.S ?? ''"
-            },
-            "IsEligibleForProductCodeUpdate": {
-              "Bool.$": "$.AccountDetails.M.IsEligibleForProductCodeUpdate.Bool ?? false"
-            },
-            "ProductCodeUpdateStatus": {
-              "S.$": "$.AccountDetails.M.ProductCodeUpdateStatus.S ?? ''"
-            },
-            "NewProductCode": {
-              "S.$": "$.AccountDetails.M.NewProductCode.S ?? ''"
-            },
-            "OldProductCode": {
-              "S.$": "$.AccountDetails.M.OldProductCode.S ?? ''"
-            },
-            "IsMemoSuccessful": {
-              "Bool.$": "$.AccountDetails.M.IsMemoSuccessful.Bool ?? false"
-            },
-            "IsCreditLimitSuccessful": {
-              "Bool.$": "$.AccountDetails.M.IsCreditLimitSuccessful.Bool ?? false"
-            },
-            "OldProductMax": {
-              "S.$": "$.AccountDetails.M.OldProductMax.S ?? ''"
-            },
-            "CardType": {
-              "S.$": "$.AccountDetails.M.CardType.S ?? ''"
-            },
-            "IsJointAccountPrimaryCardHolder": {
-              "Bool.$": "$.AccountDetails.M.IsJointAccountPrimaryCardHolder.Bool ?? false"
-            },
-            "RewardStrategy": {
-              "S.$": "$.AccountDetails.M.RewardStrategy.S ?? ''"
-            },
-            "OldProductMin": {
-              "S.$": "$.AccountDetails.M.OldProductMin.S ?? ''"
-            },
-            "FicoScore": {
-              "S.$": "$.AccountDetails.M.FicoScore.S ?? ''"
-            },
-            "FicoScoreReasonCode1": {
-              "S.$": "$.AccountDetails.M.FicoScoreReasonCode1.S ?? ''"
-            },
-            "FicoScoreReasonCode2": {
-              "S.$": "$.AccountDetails.M.FicoScoreReasonCode2.S ?? ''"
-            },
-            "FicoScoreReasonCode3": {
-              "S.$": "$.AccountDetails.M.FicoScoreReasonCode3.S ?? ''"
-            },
-            "FicoScoreReasonCode4": {
-              "S.$": "$.AccountDetails.M.FicoScoreReasonCode4.S ?? ''"
-            },
-            "FicoScoreReasonCode5": {
-              "S.$": "$.AccountDetails.M.FicoScoreReasonCode5.S ?? ''"
-            },
-            "BehaviorScoreReasonCode1": {
-              "S.$": "$.AccountDetails.M.BehaviorScoreReasonCode1.S ?? ''"
-            },
-            "BehaviorScoreReasonCode2": {
-              "S.$": "$.AccountDetails.M.BehaviorScoreReasonCode2.S ?? ''"
-            },
-            "AdverseReasonCode1": {
-              "S.$": "$.AccountDetails.M.AdverseReasonCode1.S ?? ''"
-            },
-            "AdverseReasonCode2": {
-              "S.$": "$.AccountDetails.M.AdverseReasonCode2.S ?? ''"
-            },
-            "AdverseReasonCode3": {
-              "S.$": "$.AccountDetails.M.AdverseReasonCode3.S ?? ''"
-            },
-            "AdverseReasonCode4": {
-              "S.$": "$.AccountDetails.M.AdverseReasonCode4.S ?? ''"
-            },
-            "JanusScore": {
-              "S.$": "$.AccountDetails.M.JanusScore.S ?? ''"
-            },
-            "JanusScoreAsOfDate": {
-              "S.$": "$.AccountDetails.M.JanusScoreAsOfDate.S ?? ''"
-            },
-            "BureauDataReceivedDate": {
-              "S.$": "$.AccountDetails.M.BureauDataReceivedDate.S ?? ''"
-            }
-          }
-        },
-        "PclmType": {
-          "S.$": "$.PclmType.S ?? ''"
-        },
-        "BatchId": {
-          "S.$": "$.BatchId.S ?? ''"
-        },
-        "RecordStatus": {
-          "S.$": "$.RecordStatus.S ?? ''"
-        },
-        "AccountNumber": {
-          "S.$": "$.AccountNumber.S ?? ''"
-        },
-        "MemberNumber": {
-          "S.$": "$.MemberNumber.S ?? ''"
-        },
-        "CreatedTime": {
-          "S.$": "$.CreatedTime.S ?? ''"
-        },
-        "ModifiedTime": {
-          "S.$": "$.ModifiedTime.S ?? ''"
-        },
-        "AsOfDate": {
-          "S.$": "$.AsOfDate.S ?? ''"
-        }
-      },
-      "ResultPath": "$.NormalizedInput",
-      "Next": "Transform Input"
-    },
-    "Transform Input": {
-      "Type": "Pass",
-      "Parameters": {
-        "RecordId.$": "$.NormalizedInput.Id.S",
-        "IdClaim.$": "$.NormalizedInput.AccountDetails.M.IdClaim.S",
-        "PclmType.$": "$.NormalizedInput.PclmType.S",
-        "BatchId.$": "$.NormalizedInput.BatchId.S",
-        "RecordStatus.$": "$.NormalizedInput.RecordStatus.S",
-        "AccountNumber.$": "$.NormalizedInput.AccountNumber.S",
-        "MemberNumber.$": "$.NormalizedInput.MemberNumber.S",
-        "CreatedTime.$": "$.NormalizedInput.CreatedTime.S",
-        "ModifiedTime.$": "$.NormalizedInput.ModifiedTime.S",
-        "AccountDetails": {
-          "NewCreditLimit.$": "$.NormalizedInput.AccountDetails.M.NewCreditLimit.S",
-          "OldCreditLimit.$": "$.NormalizedInput.AccountDetails.M.OldCreditLimit.S",
-          "JointAccountIndicator.$": "$.NormalizedInput.AccountDetails.M.JointAccountIndicator.Bool",
-          "ErrorMessage.$": "$.NormalizedInput.AccountDetails.M.ErrorMessage.S",
-          "PendingTransactionAmount.$": "$.NormalizedInput.AccountDetails.M.PendingTransactionAmount.S",
-          "IsEligibleForProductCodeUpdate.$": "$.NormalizedInput.AccountDetails.M.IsEligibleForProductCodeUpdate.Bool",
-          "ProductCodeUpdateStatus.$": "$.NormalizedInput.AccountDetails.M.ProductCodeUpdateStatus.S",
-          "NewProductCode.$": "$.NormalizedInput.AccountDetails.M.NewProductCode.S",
-          "OldProductCode.$": "$.NormalizedInput.AccountDetails.M.OldProductCode.S",
-          "IsMemoSuccessful.$": "$.NormalizedInput.AccountDetails.M.IsMemoSuccessful.Bool",
-          "IsCreditLimitSuccessful.$": "$.NormalizedInput.AccountDetails.M.IsCreditLimitSuccessful.Bool",
-          "OldProductMax.$": "$.NormalizedInput.AccountDetails.M.OldProductMax.S",
-          "CardType.$": "$.NormalizedInput.AccountDetails.M.CardType.S",
-          "IsJointAccountPrimaryCardHolder.$": "$.NormalizedInput.AccountDetails.M.IsJointAccountPrimaryCardHolder.Bool",
-          "RewardStrategy.$": "$.NormalizedInput.AccountDetails.M.RewardStrategy.S",
-          "OldProductMin.$": "$.NormalizedInput.AccountDetails.M.OldProductMin.S",
-          "FicoScore.$": "$.NormalizedInput.AccountDetails.M.FicoScore.S",
-          "FicoScoreReasonCode1.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode1.S",
-          "FicoScoreReasonCode2.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode2.S",
-          "FicoScoreReasonCode3.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode3.S",
-          "FicoScoreReasonCode4.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode4.S",
-          "FicoScoreReasonCode5.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode5.S",
-          "BehaviorScoreReasonCode1.$": "$.NormalizedInput.AccountDetails.M.BehaviorScoreReasonCode1.S",
-          "BehaviorScoreReasonCode2.$": "$.NormalizedInput.AccountDetails.M.BehaviorScoreReasonCode2.S",
-          "AdverseReasonCode1.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode1.S",
-          "AdverseReasonCode2.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode2.S",
-          "AdverseReasonCode3.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode3.S",
-          "AdverseReasonCode4.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode4.S",
-          "JanusScore.$": "$.NormalizedInput.AccountDetails.M.JanusScore.S",
-          "JanusScoreAsOfDate.$": "$.NormalizedInput.AccountDetails.M.JanusScoreAsOfDate.S",
-          "BureauDataReceivedDate.$": "$.NormalizedInput.AccountDetails.M.BureauDataReceivedDate.S"
-        },
-        "DecisionDate.$": "$.NormalizedInput.AsOfDate.S",
-        "AsOfDate.$": "$.NormalizedInput.AsOfDate.S"
-      },
-      "ResultPath": "$",
-      "Next": "is pcli or pcld"
-    },
     "Get records to REMEDIATE Letter": {
       "Type": "Task",
       "Parameters": {
         "TableName": "${DynamoTableName}",
         "FilterExpression": "BatchId = :batchId AND RecordStatus = :status",
         "ExpressionAttributeValues": {
-          ":batchId": {
-            "S.$": "$.BatchId"
-          },
-          ":status": {
-            "S.$": "$.RecordStatus"
-          }
+          ":batchId": {"S.$": "$.BatchId"},
+          ":status": {"S.$": "$.RecordStatus"}
         }
       },
       "Resource": "arn:aws:states:::aws-sdk:dynamodb:scan",
@@ -209,55 +20,111 @@
       "Type": "Map",
       "ItemsPath": "$.ScanResult.Items",
       "Iterator": {
-        "StartAt": "Preprocess Input",
+        "StartAt": "Transform Input",
         "States": {
           "Transform Input": {
             "Type": "Pass",
             "Parameters": {
-              "RecordId.$": "$.NormalizedInput.Id.S",
-              "IdClaim.$": "$.NormalizedInput.AccountDetails.M.IdClaim.S",
-              "PclmType.$": "$.NormalizedInput.PclmType.S",
-              "BatchId.$": "$.NormalizedInput.BatchId.S",
-              "RecordStatus.$": "$.NormalizedInput.RecordStatus.S",
-              "AccountNumber.$": "$.NormalizedInput.AccountNumber.S",
-              "MemberNumber.$": "$.NormalizedInput.MemberNumber.S",
-              "CreatedTime.$": "$.NormalizedInput.CreatedTime.S",
-              "ModifiedTime.$": "$.NormalizedInput.ModifiedTime.S",
+              "Id.$": "$.Id.S",
+              "PclmType.$": "$.PclmType.S",
+              "BatchId.$": "$.BatchId.S",
+              "RecordStatus.$": "$.RecordStatus.S",
+              "AccountNumber.$": "$.AccountNumber.S",
+              "MemberNumber.$": "$.MemberNumber.S",
+              "CreatedTime.$": "$.CreatedTime.S",
+              "ModifiedTime.$": "$.ModifiedTime.S",
+              "DecisionDate.$": "$.AsOfDate.S",
+              "AsOfDate.$": "$.AsOfDate.S",
               "AccountDetails": {
-                "NewCreditLimit.$": "$.NormalizedInput.AccountDetails.M.NewCreditLimit.S",
-                "OldCreditLimit.$": "$.NormalizedInput.AccountDetails.M.OldCreditLimit.S",
-                "JointAccountIndicator.$": "$.NormalizedInput.AccountDetails.M.JointAccountIndicator.Bool",
-                "ErrorMessage.$": "$.NormalizedInput.AccountDetails.M.ErrorMessage.S",
-                "PendingTransactionAmount.$": "$.NormalizedInput.AccountDetails.M.PendingTransactionAmount.S",
-                "IsEligibleForProductCodeUpdate.$": "$.NormalizedInput.AccountDetails.M.IsEligibleForProductCodeUpdate.Bool",
-                "ProductCodeUpdateStatus.$": "$.NormalizedInput.AccountDetails.M.ProductCodeUpdateStatus.S",
-                "NewProductCode.$": "$.NormalizedInput.AccountDetails.M.NewProductCode.S",
-                "OldProductCode.$": "$.NormalizedInput.AccountDetails.M.OldProductCode.S",
-                "IsMemoSuccessful.$": "$.NormalizedInput.AccountDetails.M.IsMemoSuccessful.Bool",
-                "IsCreditLimitSuccessful.$": "$.NormalizedInput.AccountDetails.M.IsCreditLimitSuccessful.Bool",
-                "OldProductMax.$": "$.NormalizedInput.AccountDetails.M.OldProductMax.S",
-                "CardType.$": "$.NormalizedInput.AccountDetails.M.CardType.S",
-                "IsJointAccountPrimaryCardHolder.$": "$.NormalizedInput.AccountDetails.M.IsJointAccountPrimaryCardHolder.Bool",
-                "RewardStrategy.$": "$.NormalizedInput.AccountDetails.M.RewardStrategy.S",
-                "OldProductMin.$": "$.NormalizedInput.AccountDetails.M.OldProductMin.S",
-                "FicoScore.$": "$.NormalizedInput.AccountDetails.M.FicoScore.S",
-                "FicoScoreReasonCode1.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode1.S",
-                "FicoScoreReasonCode2.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode2.S",
-                "FicoScoreReasonCode3.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode3.S",
-                "FicoScoreReasonCode4.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode4.S",
-                "FicoScoreReasonCode5.$": "$.NormalizedInput.AccountDetails.M.FicoScoreReasonCode5.S",
-                "BehaviorScoreReasonCode1.$": "$.NormalizedInput.AccountDetails.M.BehaviorScoreReasonCode1.S",
-                "BehaviorScoreReasonCode2.$": "$.NormalizedInput.AccountDetails.M.BehaviorScoreReasonCode2.S",
-                "AdverseReasonCode1.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode1.S",
-                "AdverseReasonCode2.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode2.S",
-                "AdverseReasonCode3.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode3.S",
-                "AdverseReasonCode4.$": "$.NormalizedInput.AccountDetails.M.AdverseReasonCode4.S",
-                "JanusScore.$": "$.NormalizedInput.AccountDetails.M.JanusScore.S",
-                "JanusScoreAsOfDate.$": "$.NormalizedInput.AccountDetails.M.JanusScoreAsOfDate.S",
-                "BureauDataReceivedDate.$": "$.NormalizedInput.AccountDetails.M.BureauDataReceivedDate.S"
-              },
-              "DecisionDate.$": "$.NormalizedInput.AsOfDate.S",
-              "AsOfDate.$": "$.NormalizedInput.AsOfDate.S"
+                "NewCreditLimit.$": "$.AccountDetails.M.NewCreditLimit.S",
+                "OldCreditLimit.$": "$.AccountDetails.M.OldCreditLimit.S",
+                "JointAccountIndicator.$": "$.AccountDetails.M.JointAccountIndicator.Bool",
+                "ErrorMessage.$": "$.AccountDetails.M.ErrorMessage.S",
+                "PendingTransactionAmount.$": "$.AccountDetails.M.PendingTransactionAmount.S",
+                "IsEligibleForProductCodeUpdate.$": "$.AccountDetails.M.IsEligibleForProductCodeUpdate.Bool",
+                "ProductCodeUpdateStatus.$": "$.AccountDetails.M.ProductCodeUpdateStatus.S",
+                "NewProductCode.$": "$.AccountDetails.M.NewProductCode.S",
+                "OldProductCode.$": "$.AccountDetails.M.OldProductCode.S",
+                "IsMemoSuccessful.$": "$.AccountDetails.M.IsMemoSuccessful.Bool",
+                "IsCreditLimitSuccessful.$": "$.AccountDetails.M.IsCreditLimitSuccessful.Bool",
+                "OldProductMax.$": "$.AccountDetails.M.OldProductMax.S",
+                "CardType.$": "$.AccountDetails.M.CardType.S",
+                "IsJointAccountPrimaryCardHolder.$": "$.AccountDetails.M.IsJointAccountPrimaryCardHolder.Bool",
+                "RewardStrategy.$": "$.AccountDetails.M.RewardStrategy.S",
+                "OldProductMin.$": "$.AccountDetails.M.OldProductMin.S",
+                "FicoScore.$": "$.AccountDetails.M.FicoScore.S",
+                "FicoScoreReasonCode1.$": "$.AccountDetails.M.FicoScoreReasonCode1.S",
+                "FicoScoreReasonCode2.$": "$.AccountDetails.M.FicoScoreReasonCode2.S",
+                "FicoScoreReasonCode3.$": "$.AccountDetails.M.FicoScoreReasonCode3.S",
+                "FicoScoreReasonCode4.$": "$.AccountDetails.M.FicoScoreReasonCode4.S",
+                "FicoScoreReasonCode5.$": "$.AccountDetails.M.FicoScoreReasonCode5.S",
+                "BehaviorScoreReasonCode1.$": "$.AccountDetails.M.BehaviorScoreReasonCode1.S",
+                "BehaviorScoreReasonCode2.$": "$.AccountDetails.M.BehaviorScoreReasonCode2.S",
+                "AdverseReasonCode1.$": "$.AccountDetails.M.AdverseReasonCode1.S",
+                "AdverseReasonCode2.$": "$.AccountDetails.M.AdverseReasonCode2.S",
+                "AdverseReasonCode3.$": "$.AccountDetails.M.AdverseReasonCode3.S",
+                "AdverseReasonCode4.$": "$.AccountDetails.M.AdverseReasonCode4.S",
+                "JanusScore.$": "$.AccountDetails.M.JanusScore.S",
+                "JanusScoreAsOfDate.$": "$.AccountDetails.M.JanusScoreAsOfDate.S",
+                "BureauDataReceivedDate.$": "$.AccountDetails.M.BureauDataReceivedDate.S"
+              }
+            },
+            "ResultPath": "$",
+            "Next": "is pcli or pcld",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Next": "Handle Missing Fields",
+                "ResultPath": "$.TransformError"
+              }
+            ]
+          },
+          "Handle Missing Fields": {
+            "Type": "Pass",
+            "Parameters": {
+              "Id": "",
+              "PclmType": "",
+              "BatchId": "",
+              "RecordStatus": "",
+              "AccountNumber": "",
+              "MemberNumber": "",
+              "CreatedTime": "",
+              "ModifiedTime": "",
+              "DecisionDate": "",
+              "AsOfDate": "",
+              "AccountDetails": {
+                "NewCreditLimit": "",
+                "OldCreditLimit": "",
+                "JointAccountIndicator": false,
+                "ErrorMessage": "",
+                "PendingTransactionAmount": "",
+                "IsEligibleForProductCodeUpdate": false,
+                "ProductCodeUpdateStatus": "",
+                "NewProductCode": "",
+                "OldProductCode": "",
+                "IsMemoSuccessful": false,
+                "IsCreditLimitSuccessful": false,
+                "OldProductMax": "",
+                "CardType": "",
+                "IsJointAccountPrimaryCardHolder": false,
+                "RewardStrategy": "",
+                "OldProductMin": "",
+                "FicoScore": "",
+                "FicoScoreReasonCode1": "",
+                "FicoScoreReasonCode2": "",
+                "FicoScoreReasonCode3": "",
+                "FicoScoreReasonCode4": "",
+                "FicoScoreReasonCode5": "",
+                "BehaviorScoreReasonCode1": "",
+                "BehaviorScoreReasonCode2": "",
+                "AdverseReasonCode1": "",
+                "AdverseReasonCode2": "",
+                "AdverseReasonCode3": "",
+                "AdverseReasonCode4": "",
+                "JanusScore": "",
+                "JanusScoreAsOfDate": "",
+                "BureauDataReceivedDate": ""
+              }
             },
             "ResultPath": "$",
             "Next": "is pcli or pcld"
