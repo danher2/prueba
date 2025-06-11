@@ -1,0 +1,27 @@
+Sure! Here’s a breakdown for your script:
+
+**Goal:**
+The goal of the script is to update all existing records in the production DynamoDB table by adding an expiration field with a calculated expiration date, ensuring that only records that currently lack the expiration field are updated.
+
+**Acceptance Criteria:**
+
+1. The script must scan all existing records in the DynamoDB table.
+2. Only records that do not have the expiration field should be updated.
+3. The script should add the expiration field with a value calculated based on a defined logic (for example, a certain number of days from the current date).
+4. New records or records that already have the expiration field should remain unchanged.
+
+**Given-When-Then Scenario:**
+
+* **Given** there are existing records in the DynamoDB table without an expiration field,
+* **When** the script is executed,
+* **Then** those records should have the expiration field added with the correct expiration date, and records that already had the expiration field should remain unchanged.
+
+**Steps to Create the Script:**
+
+1. **Set up your environment:** Make sure you have the AWS SDK installed for the language of your choice (e.g., Boto3 for Python).
+2. **Scan the table:** Use the `Scan` operation to retrieve all records from the table.
+3. **Check for the expiration field:** For each record, check if the expiration field is missing.
+4. **Calculate the expiration date:** Define the logic for calculating the expiration date (e.g., current time plus a certain number of days).
+5. **Update the record:** Use the `UpdateItem` operation to add the expiration field to records that need it.
+6. **Run and verify:** Execute the script in a test environment first to ensure it works as expected before running it in production.
+   \[media pointer="sediment://file\_00000000011c622fbe47b55d0c7dede0"]
