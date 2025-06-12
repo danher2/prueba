@@ -25,3 +25,161 @@ The goal of the script is to update all existing records in the production Dynam
 5. **Update the record:** Use the `UpdateItem` operation to add the expiration field to records that need it.
 6. **Run and verify:** Execute the script in a test environment first to ensure it works as expected before running it in production.
    \[media pointer="sediment://file\_00000000011c622fbe47b55d0c7dede0"]
+
+
+
+
+1. Script
+bash
+Copiar
+Editar
+#!/bin/bash
+
+TABLE_NAME="dyno-db"
+LOG_FILE="expiration_update_log.csv"
+MAX_JOBS=20
+EXPIRATION_DAYS=60
+
+echo "ID,ACCOUNTNUMBER,Status" > "$LOG_FILE"
+
+get_expiration_epoch() {
+  date -d "+${EXPIRATION_DAYS} days" +%s
+}
+
+wait_for_jobs() {
+  while (( $(jobs -rp | wc -l) >= MAX_JOBS )); do
+    sleep 0.2
+  done
+}
+
+process_page() {
+  local page_file="$1"
+  cat "$page_file" | jq -c '.Items[]' | while read item; do
+    ID=$(echo "$item" | jq -r '.ID.S')
+    ACCOUNTNUMBER=$(echo "$item" | jq -r '.ACCOUNTNUMBER.S')
+    HAS_EXPIRATION=$(echo "$item" | jq 'has("expiration")')
+    if [[ "$HAS_EXPIRATION" == "false" && -n "$ID" && -n "$ACCOUNTNUMBER" ]]; then
+      wait_for_jobs
+      {
+        EXPIRATION=$(get_expiration_epoch)
+        aws dynamodb update-item --table-name "$TABLE_NAME" \
+          --key '{"ID": {"S": "'"$ID"'"}, "ACCOUNTNUMBER": {"S": "'"$ACCOUNTNUMBER"'"}}' \
+          --update-expression "SET expiration = :exp" \
+          --expression-attribute-values '{":exp": {"N": "'"$EXPIRATION"'"}}' \
+          --return-values NONE
+        echo "$ID,$ACCOUNTNUMBER,Updated" >> "$LOG_FILE"
+      } &
+    else
+      echo "$ID,$ACCOUNTNUMBER,Skipped: Already has expiration or missing keys" >> "$LOG_FILE"
+    fi
+  done
+}
+
+echo "Scanning DynamoDB table $TABLE_NAME..."
+
+LAST_EVALUATED_KEY=""
+PAGE=1
+
+while :; do
+  SCAN_FILE="scan_page_$PAGE.json"
+  if [[ -z "$LAST_EVALUATED_KEY" ]]; then
+    aws dynamodb scan --table-name "$TABLE_NAME" --output json > "$SCAN_FILE"
+  else
+    aws dynamodb scan --table-name "$TABLE_NAME" --output json \
+      --starting-token "$LAST_EVALUATED_KEY" > "$SCAN_FILE"
+  fi
+
+  process_page "$SCAN_FILE"
+
+  LAST_EVALUATED_KEY=$(jq -r '.NextToken // empty' "$SCAN_FILE")
+  if [[ -z "$LAST_EVALUATED_KEY" ]]; then
+    break
+  fi
+  PAGE=$((PAGE + 1))
+done
+
+wait
+sleep 5
+
+UPDATED_COUNT=$(grep -c ',Updated' "$LOG_FILE")
+echo "Update complete. $UPDATED_COUNT records updated. See $LOG_FILE for details."
+2. How it works (in detail)
+Scans the entire DynamoDB table in pages (to handle very large datasets).
+
+For each record:
+
+Extracts ID and ACCOUNTNUMBER keys.
+
+Checks if the record does not have the expiration field.
+
+If expiration is missing:
+
+Calculates an expiration value (current epoch + 60 days).
+
+Updates the record in DynamoDB to add the expiration attribute.
+
+Logs the update in expiration_update_log.csv.
+
+If expiration exists or a key is missing, logs as "Skipped."
+
+Runs up to 20 updates in parallel to speed up the process.
+
+At the end, prints the number of updated records and tells you where to find the log.
+
+3. How to run it
+Prerequisites:
+
+Git Bash installed on Windows (or any Bash terminal on Linux/Mac).
+
+AWS CLI installed and configured with your credentials.
+
+jq installed (put jq.exe in your PATH for Windows or install via package manager on Mac/Linux).
+
+Steps:
+
+Copy the script above into a file named:
+update_dynamodb_expiration.sh
+
+Open Git Bash (or your preferred Bash terminal).
+
+Make the script executable:
+
+bash
+Copiar
+Editar
+chmod +x update_dynamodb_expiration.sh
+Run the script:
+
+bash
+Copiar
+Editar
+./update_dynamodb_expiration.sh
+After it completes, check expiration_update_log.csv for a log of all updates and skips.
+
+4. What is jq?
+jq is a powerful command-line tool for processing and transforming JSON data.
+
+In this script, jq is used to:
+
+Extract fields (ID, ACCOUNTNUMBER) from DynamoDB scan results.
+
+Check if the expiration field exists.
+
+It acts like sed or awk, but for JSON—making it ideal for working with AWS CLI JSON output.
+
+Official site: stedolan.github.io/jq/
+
+Windows: Download the .exe from the official site and add it to your PATH.
+
+Linux/Mac: Install with your package manager (sudo apt install jq, brew install jq, etc.).
+
+Let me know if you want a downloadable version, troubleshooting tips, or have any other questions!
+
+
+
+
+
+
+
+
+
