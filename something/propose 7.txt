@@ -316,3 +316,73 @@ set /a UPDATED=0
 echo.
 echo Update complete. %UPDATED% records updated. See %LOG%.
 endlocal
+
+
+
+====================================================================
+SHELL
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Configuration ─────────────
+TABLE="dyno-db"
+LOG="expiration_update_log.csv"
+EXP_DAYS=60
+
+# Compute expiration epoch (UTC now + EXP_DAYS days)
+EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
+
+# Initialize CSV log
+echo "ID,ACCOUNTNUMBER,Status" > "$LOG"
+
+NEXT_TOKEN=""
+UPDATED=0
+
+while :; do
+  # 1) Scan for items missing 'expiration', output ID & ACCOUNT as text:
+  if [[ -n "$NEXT_TOKEN" ]]; then
+    RAW_LIST=$(aws dynamodb scan \
+      --table-name "$TABLE" \
+      --filter-expression "attribute_not_exists(expiration)" \
+      --projection-expression "ID,ACCOUNTNUMBER" \
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
+      --output text \
+      --starting-token "$NEXT_TOKEN")
+  else
+    RAW_LIST=$(aws dynamodb scan \
+      --table-name "$TABLE" \
+      --filter-expression "attribute_not_exists(expiration)" \
+      --projection-expression "ID,ACCOUNTNUMBER" \
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
+      --output text)
+  fi
+
+  # 2) Process each line (ID<TAB>ACCOUNTNUMBER)
+  while read -r ID ACC; do
+    aws dynamodb update-item \
+      --table-name "$TABLE" \
+      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
+      --update-expression "SET expiration = :exp" \
+      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
+      --return-values NONE
+
+    echo "$ID,$ACC,Updated" >> "$LOG"
+    ((UPDATED++))
+  done <<< "$RAW_LIST"
+
+  # 3) Get NextToken for pagination (AWS CLI v2)
+  NEXT_TOKEN=$(aws dynamodb scan \
+    --table-name "$TABLE" \
+    --filter-expression "attribute_not_exists(expiration)" \
+    --projection-expression "ID" \
+    --query "NextToken" \
+    --output text)
+
+  # AWS CLI outputs “None” when there is no next token
+  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
+done
+
+echo
+echo "Update complete. $UPDATED records updated. See $LOG."
+
