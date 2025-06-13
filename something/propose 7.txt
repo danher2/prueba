@@ -30,87 +30,105 @@ The goal of the script is to update all existing records in the production Dynam
 powershell version
 
 # Configuration
-$tableName = "dyno-db"
-$logFile = "expiration_update_log.csv"
+$tableName      = "dyno-db"
+$logFile        = "expiration_update_log.csv"
 $expirationDays = 60
 
 # Functions
-function Get-Epoch60DaysAhead {
-    return [int][double]::Parse((Get-Date).AddDays($expirationDays).ToUniversalTime().Subtract([datetime]'1970-01-01').TotalSeconds)
+toolbox Get-Epoch60DaysAhead {
+    # Returns the Unix epoch seconds for now + $expirationDays
+    return [int][double]::Parse(
+        (Get-Date)
+            .AddDays($expirationDays)
+            .ToUniversalTime()
+            .Subtract([datetime]'1970-01-01')
+            .TotalSeconds
+    )
 }
 
-function Write-Log {
+toolbox Write-Log {
     param(
         [string]$id,
         [string]$accountNumber,
         [string]$status
     )
+    # Append a CSV line to the log file
     Add-Content -Path $logFile -Value "$id,$accountNumber,$status"
 }
 
-# Start
-"ID,ACCOUNTNUMBER,Status" | Set-Content -Path $logFile
-Write-Host "Scanning DynamoDB table $tableName ..."
+# Initialize log
+"ID,ACCOUNTNUMBER,Status" | Set-Content -Path $logFile -Encoding utf8
+Write-Host "Scanning DynamoDB table '$tableName'..."
 
-$nextToken = $null
+$nextToken    = $null
 $updatedCount = 0
-$page = 1
+$page         = 1
 
 do {
+    # Build scan command
     if ($null -eq $nextToken) {
         $scanCmd = "aws dynamodb scan --table-name $tableName --output json"
     } else {
         $scanCmd = "aws dynamodb scan --table-name $tableName --output json --starting-token `"$nextToken`""
     }
 
-    # Get scan result and parse JSON
+    # Execute scan and parse JSON
     $scanResult = Invoke-Expression $scanCmd | ConvertFrom-Json
 
-    if ($scanResult.Items -eq $null) {
-        Write-Host "No items found in scan page $page."
+    if ($null -eq $scanResult.Items) {
+        Write-Host "No items found on page $page."
         break
     }
 
     foreach ($item in $scanResult.Items) {
-        $id = $null
+        $id            = $null
         $accountNumber = $null
         $hasExpiration = $false
 
+        # Extract keys
         if ($item.PSObject.Properties.Name -contains "ID" -and $item.ID.PSObject.Properties.Name -contains "S") {
             $id = $item.ID.S
         }
         if ($item.PSObject.Properties.Name -contains "ACCOUNTNUMBER" -and $item.ACCOUNTNUMBER.PSObject.Properties.Name -contains "S") {
             $accountNumber = $item.ACCOUNTNUMBER.S
         }
+        # Check if expiration already exists
         if ($item.PSObject.Properties.Name -contains "expiration") {
             $hasExpiration = $true
         }
 
+        # If valid keys and no expiration, update it
         if ($null -ne $id -and $null -ne $accountNumber -and -not $hasExpiration) {
             $expiration = Get-Epoch60DaysAhead
+
+            # Fixed here-string for PowerShell + AWS CLI
             $updateCmd = @"
 aws dynamodb update-item --table-name $tableName `
---key '{\"ID\": {\"S\": \"$id\"}, \"ACCOUNTNUMBER\": {\"S\": \"$accountNumber\"}}' `
---update-expression "SET expiration = :exp" `
---expression-attribute-values '{":exp": {"N": "$expiration"}}' `
---return-values NONE
+  --key "{\"ID\":{\"S\":\"$id\"},\"ACCOUNTNUMBER\":{\"S\":\"$accountNumber\"}}" `
+  --update-expression "SET expiration = :exp" `
+  --expression-attribute-values "{\":exp\":{\"N\":\"$expiration\"}}" `
+  --return-values NONE
 "@
+
+            # Diagnostic output (optional)
+            Write-Host "Running update for ID=$id / Account=$accountNumber"
+            Write-Host $updateCmd
+
+            # Execute update
             Invoke-Expression $updateCmd | Out-Null
             Write-Log -id $id -accountNumber $accountNumber -status "Updated"
             $updatedCount++
         } else {
+            # Log skipped items
             Write-Log -id $id -accountNumber $accountNumber -status "Skipped: Already has expiration or missing keys"
         }
     }
 
-    # Pagination support (AWS CLI v2 uses NextToken, v1 uses LastEvaluatedKey)
+    # Handle pagination tokens
     if ($scanResult.PSObject.Properties.Name -contains "NextToken") {
         $nextToken = $scanResult.NextToken
     } elseif ($scanResult.PSObject.Properties.Name -contains "LastEvaluatedKey") {
-        $nextToken = $scanResult.LastEvaluatedKey
-        if ($nextToken -ne $null) {
-            $nextToken = $nextToken | ConvertTo-Json -Compress
-        }
+        $nextToken = $scanResult.LastEvaluatedKey | ConvertTo-Json -Compress
     } else {
         $nextToken = $null
     }
@@ -119,18 +137,3 @@ aws dynamodb update-item --table-name $tableName `
 } while ($null -ne $nextToken -and $nextToken -ne "")
 
 Write-Host "`nUpdate complete. $updatedCount records updated. See $logFile for details."
-
-================================
-
-# assume $tableName, $id, $accountNumber, $expiration are already set
-$updateCmd = @"
-aws dynamodb update-item --table-name $tableName `
-  --key "{\"ID\":{\"S\":\"$id\"},\"ACCOUNTNUMBER\":{\"S\":\"$accountNumber\"}}" `
-  --update-expression "SET expiration = :exp" `
-  --expression-attribute-values "{\":exp\":{\"N\":\"$expiration\"}}" `
-  --return-values NONE
-"@
-
-Write-Host "Running:"
-Write-Host $updateCmd
-Invoke-Expression $updateCmd
