@@ -380,4 +380,12 @@ Write-Host "Update process complete. $updatedCount records updated. See $logFile
 
 
 
+$keyJson = '{\"ID\":{\"S\":\"' + $id + '\"},\"ACCOUNTNUMBER\":{\"S\":\"' + $accountNumber + '\"}}'
+$expJson = '{\":exp\":{\"N\":' + $expiration + '}}'
+
+aws dynamodb update-item --table-name $tableName `
+    --key "$keyJson" `
+    --update-expression "SET expiration = :exp" `
+    --expression-attribute-values "$expJson" `
+    --return-values NONE
 
