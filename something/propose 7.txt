@@ -397,46 +397,47 @@ new one
 
 param(
     [Parameter(Mandatory)]
-    [string]$TableName = 'dyno-db',
+    [string]$TableName       = 'dyno-db',
 
     [Parameter(Mandatory)]
-    [string]$LogFile   = 'expiration_update_log.csv',
+    [string]$LogFile         = 'expiration_update_log.csv',
 
-    [int]$ExpirationDays = 60,
+    [int]   $ExpirationDays  = 60,
 
-    [string]$Region  = 'us-east-1',
-    [string]$Profile = 'default'
+    [string]$Region          = 'us-east-1',
+    [string]$Profile         = 'default'
 )
 
 Import-Module AWS.Tools.DynamoDBv2
 
-# Compute expiration epoch once
+# 1) Compute the expiration timestamp, with all parentheses balanced
 $expirationTimestamp = [int](
-    (Get-Date).AddDays($ExpirationDays)
-             .ToUniversalTime()
-             .Subtract([datetime]'1970-01-01')
-             .TotalSeconds
-)
+    (Get-Date)
+        .AddDays($ExpirationDays)
+        .ToUniversalTime()
+        .Subtract([datetime]'1970-01-01')
+        .TotalSeconds
+)  # ← closes the [int](… 
 
-# Initialize log
+# 2) Initialize CSV log (overwrites existing)
 "ID,AccountNumber,Status,Error" | Out-File -FilePath $LogFile -Encoding utf8
 
 Write-Host "Scanning DynamoDB table '$TableName' in region $Region..."
 
 $exclusiveStartKey = $null
-$updatedCount = 0
-$page         = 1
+$updatedCount      = 0
+$page              = 1
 
 do {
+    # 3) Scan only items missing 'expiration'
     $scanParams = @{
-        TableName               = $TableName
-        FilterExpression        = 'attribute_not_exists(expiration)'
-        ProjectionExpression    = 'ID, ACCOUNTNUMBER'
-        ConsistentRead          = $false
-        Limit                   = 100
-        ExclusiveStartKey       = $exclusiveStartKey
-        Region                  = $Region
-        ProfileName             = $Profile
+        TableName            = $TableName
+        FilterExpression     = 'attribute_not_exists(expiration)'
+        ProjectionExpression = 'ID, ACCOUNTNUMBER'
+        Limit                = 100
+        ExclusiveStartKey    = $exclusiveStartKey
+        Region               = $Region
+        ProfileName          = $Profile
     }
 
     $pageResult = Get-DDBTableItem @scanParams
@@ -447,12 +448,10 @@ do {
     }
 
     foreach ($item in $pageResult.Items) {
-        # Extract key values
         $id            = $item['ID'].S
         $accountNumber = $item['ACCOUNTNUMBER'].S
 
         try {
-            # Prepare update
             $key = @{
                 'ID'            = @{ S = $id }
                 'ACCOUNTNUMBER' = @{ S = $accountNumber }
@@ -464,29 +463,31 @@ do {
                 }
             }
 
-            # Issue update
+            # 4) Perform the update
             Update-DDBItem `
-                -TableName $TableName `
-                -Key $key `
+                -TableName        $TableName `
+                -Key              $key `
                 -AttributeUpdates $attributeUpdates `
-                -Region $Region `
-                -ProfileName $Profile
+                -Region           $Region `
+                -ProfileName      $Profile
 
-            # Log success
+            # 5a) Log success
             "$id,$accountNumber,Updated," | Out-File -FilePath $LogFile -Append
             $updatedCount++
         }
         catch {
-            # Log failure
-            "$id,$accountNumber,Failed,$($_.Exception.Message)" | Out-File -FilePath $LogFile -Append
-            Write-Warning "Failed updating $id / $accountNumber: $($_.Exception.Message)"
+            # 5b) Log failure — note the escaped colon before the sub-expression
+            "$id,$accountNumber,Failed,$($_.Exception.Message)" `
+                | Out-File -FilePath $LogFile -Append
+
+            Write-Warning "Failed updating $id / $accountNumber`: $($_.Exception.Message)"
         }
     }
 
-    # Advance pagination
+    # 6) Continue pagination
     $exclusiveStartKey = $pageResult.LastEvaluatedKey
     $page++
-} while ($exclusiveStartKey)
+}
+while ($exclusiveStartKey)
 
 Write-Host "`nDone. $updatedCount items updated. See '$LogFile' for details."
-
