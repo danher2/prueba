@@ -270,7 +270,14 @@ aws dynamodb update-item --table-name $tableName `
 Write-Host "`nUpdate complete. $updatedCount records updated. See $logFile for details."
 
 
+new command single line
 
+$updateCmd = "aws dynamodb update-item --table-name $tableName " +
+             "--key '{\"ID\": {\"S\": \"$id\"}, \"ACCOUNTNUMBER\": {\"S\": \"$accountNumber\"}}' " +
+             "--update-expression \"SET expiration = :exp\" " +
+             "--expression-attribute-values '{\":exp\": {\"N\": \"$expiration\"}}' " +
+             "--return-values NONE"
+Invoke-Expression $updateCmd | Out-Null
 
 
 
