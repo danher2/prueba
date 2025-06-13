@@ -249,3 +249,70 @@ Write-Host "`nUpdate complete. $updatedCount records updated. See $logFile for d
 
 powershell -NoProfile -Command { .\update_dynamo_expiration.ps1; exit }
 
+=============================================================================
+BAT
+
+@echo off
+setlocal enabledelayedexpansion
+
+rem ── Configuration ─────────────
+set "TABLE=dyno-db"
+set "LOG=expiration_update_log.csv"
+set /a EXP_DAYS=60
+
+rem ── Compute expiration epoch (UTC now + EXP_DAYS)
+for /f %%T in ('powershell -NoProfile -Command ^
+  "(Get-Date).AddDays(%EXP_DAYS%).ToUniversalTime().Subtract([datetime]'1970-01-01').TotalSeconds|ForEach-Object {[int]$_}"') do (
+  set "EXPIRATION=%%T"
+)
+
+rem ── Initialize CSV log
+echo ID,ACCOUNTNUMBER,Status > "%LOG%"
+
+rem ── Paging setup
+set "NEXT_TOKEN="
+set /a UPDATED=0
+
+:PAGE_LOOP
+  rem 1) Scan, filtering out items that already have 'expiration'
+  if defined NEXT_TOKEN (
+    set "SCAN_OPTS=--starting-token %NEXT_TOKEN%"
+  ) else (
+    set "SCAN_OPTS="
+  )
+
+  for /f "tokens=1,2" %%A in ('aws dynamodb scan --table-name %TABLE% ^
+      --filter-expression "attribute_not_exists(expiration)" ^
+      --projection-expression "ID,ACCOUNTNUMBER" ^
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" ^
+      --output text %SCAN_OPTS%') do (
+      
+      set "ID=%%A"
+      set "ACC=%%B"
+
+      rem 2) Update expiration
+      aws dynamodb update-item ^
+        --table-name %TABLE% ^
+        --key "{\"ID\":{\"S\":\"!ID!\"},\"ACCOUNTNUMBER\":{\"S\":\"!ACC!\"}}" ^
+        --update-expression "SET expiration = :exp" ^
+        --expression-attribute-values "{\":exp\":{\"N\":\"%EXPIRATION%\"}}" ^
+        --return-values NONE
+
+      echo !ID!,!ACC!,Updated>>"%LOG%"
+      set /a UPDATED+=1
+  )
+
+  rem 3) Get the NextToken for pagination (AWS CLI v2)
+  for /f %%T in ('aws dynamodb scan --table-name %TABLE% ^
+      --filter-expression "attribute_not_exists(expiration)" ^
+      --projection-expression "ID" ^
+      --query "NextToken" ^
+      --output text') do set "NEXT_TOKEN=%%T"
+
+  if "%NEXT_TOKEN%"=="None" set "NEXT_TOKEN="
+  if defined NEXT_TOKEN goto PAGE_LOOP
+
+:END
+echo.
+echo Update complete. %UPDATED% records updated. See %LOG%.
+endlocal
