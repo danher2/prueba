@@ -1,4 +1,4 @@
-Sure! Here’s a breakdown for your script:
+seeSure! Here’s a breakdown for your script:
 
 **Goal:**
 The goal of the script is to update all existing records in the production DynamoDB table by adding an expiration field with a calculated expiration date, ensuring that only records that currently lack the expiration field are updated.
@@ -280,6 +280,102 @@ $updateCmd = "aws dynamodb update-item --table-name $tableName " +
 Invoke-Expression $updateCmd | Out-Null
 
 
+
+
+# =====================[ SETTINGS ]=====================
+# Configure these variables as needed:
+$tableName = "dyno-db"
+$logFile = "expiration_update_log.csv"
+$maxJobs = 20
+
+# =====================[ HELPER FUNCTIONS ]=====================
+function Wait-ForJobs {
+    while ($(Get-Job | Where-Object { $_.State -eq "Running" }).Count -ge $maxJobs) {
+        Start-Sleep -Milliseconds 200
+    }
+}
+
+function Get-Epoch60DaysFromNow {
+    return [string]([math]::Floor((Get-Date).AddDays(60).ToUniversalTime() - [datetime]'1970-01-01').TotalSeconds)
+}
+
+# =====================[ INITIALIZATION ]=====================
+# Clean old log
+"ID,ACCOUNTNUMBER,Status" | Out-File -Encoding UTF8 $logFile
+
+# Scan all records in DynamoDB table (pagination)
+Write-Host "Scanning DynamoDB table $tableName ..."
+
+$exclusiveStartKey = $null
+$updatedCount = 0
+
+do {
+    $scanCmd = "aws dynamodb scan --table-name $tableName --output json"
+    if ($exclusiveStartKey) {
+        $scanCmd += " --starting-token '$exclusiveStartKey'"
+    }
+
+    $result = Invoke-Expression $scanCmd | ConvertFrom-Json
+
+    foreach ($item in $result.Items) {
+        # Get Keys
+        $id = $item.ID.S
+        $accountNumber = $item.ACCOUNTNUMBER.S
+
+        # Check for existing expiration
+        $hasExpiration = $item.PSObject.Properties.Name -contains "expiration"
+
+        if (-not $hasExpiration -and $id -and $accountNumber) {
+            $expiration = Get-Epoch60DaysFromNow
+
+            # --key JSON with proper double quotes
+            $keyJson = @{
+                ID = @{ S = $id }
+                ACCOUNTNUMBER = @{ S = $accountNumber }
+            } | ConvertTo-Json -Compress
+
+            # --expression-attribute-values JSON
+            $expJson = @{
+                ":exp" = @{ N = $expiration }
+            } | ConvertTo-Json -Compress
+
+            # Build and execute update-item command
+            $updateCmd = @(
+                "aws dynamodb update-item",
+                "--table-name `"$tableName`"",
+                "--key '$keyJson'",
+                "--update-expression 'SET expiration = :exp'",
+                "--expression-attribute-values '$expJson'",
+                "--return-values NONE"
+            ) -join " "
+
+            Start-Job -ScriptBlock {
+                param($updateCmd, $id, $accountNumber, $logFile)
+                $out = Invoke-Expression $updateCmd 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Add-Content $logFile "$id,$accountNumber,Updated"
+                } else {
+                    Add-Content $logFile "$id,$accountNumber,UpdateError: $out"
+                }
+            } -ArgumentList $updateCmd, $id, $accountNumber, $logFile
+
+            $updatedCount++
+            Wait-ForJobs
+        }
+        else {
+            Add-Content $logFile "$id,$accountNumber,Skipped"
+        }
+    }
+
+    # Handle pagination
+    $exclusiveStartKey = $result.NextToken
+} while ($exclusiveStartKey)
+
+# Wait for all jobs to finish
+Get-Job | Wait-Job | Out-Null
+
+# Final status
+Write-Host "Update process complete. $updatedCount records updated. See $logFile for details."
 
 
 
