@@ -389,3 +389,104 @@ aws dynamodb update-item --table-name $tableName `
     --expression-attribute-values "$expJson" `
     --return-values NONE
 
+
+
+
+
+new one
+
+param(
+    [Parameter(Mandatory)]
+    [string]$TableName = 'dyno-db',
+
+    [Parameter(Mandatory)]
+    [string]$LogFile   = 'expiration_update_log.csv',
+
+    [int]$ExpirationDays = 60,
+
+    [string]$Region  = 'us-east-1',
+    [string]$Profile = 'default'
+)
+
+Import-Module AWS.Tools.DynamoDBv2
+
+# Compute expiration epoch once
+$expirationTimestamp = [int](
+    (Get-Date).AddDays($ExpirationDays)
+             .ToUniversalTime()
+             .Subtract([datetime]'1970-01-01')
+             .TotalSeconds
+)
+
+# Initialize log
+"ID,AccountNumber,Status,Error" | Out-File -FilePath $LogFile -Encoding utf8
+
+Write-Host "Scanning DynamoDB table '$TableName' in region $Region..."
+
+$exclusiveStartKey = $null
+$updatedCount = 0
+$page         = 1
+
+do {
+    $scanParams = @{
+        TableName               = $TableName
+        FilterExpression        = 'attribute_not_exists(expiration)'
+        ProjectionExpression    = 'ID, ACCOUNTNUMBER'
+        ConsistentRead          = $false
+        Limit                   = 100
+        ExclusiveStartKey       = $exclusiveStartKey
+        Region                  = $Region
+        ProfileName             = $Profile
+    }
+
+    $pageResult = Get-DDBTableItem @scanParams
+
+    if (-not $pageResult.Items) {
+        Write-Host "No more items on page $page."
+        break
+    }
+
+    foreach ($item in $pageResult.Items) {
+        # Extract key values
+        $id            = $item['ID'].S
+        $accountNumber = $item['ACCOUNTNUMBER'].S
+
+        try {
+            # Prepare update
+            $key = @{
+                'ID'            = @{ S = $id }
+                'ACCOUNTNUMBER' = @{ S = $accountNumber }
+            }
+            $attributeUpdates = @{
+                'expiration' = @{
+                    Action = 'PUT'
+                    Value  = @{ N = "$expirationTimestamp" }
+                }
+            }
+
+            # Issue update
+            Update-DDBItem `
+                -TableName $TableName `
+                -Key $key `
+                -AttributeUpdates $attributeUpdates `
+                -Region $Region `
+                -ProfileName $Profile
+
+            # Log success
+            "$id,$accountNumber,Updated," | Out-File -FilePath $LogFile -Append
+            $updatedCount++
+        }
+        catch {
+            # Log failure
+            "$id,$accountNumber,Failed,$($_.Exception.Message)" | Out-File -FilePath $LogFile -Append
+            Write-Warning "Failed updating $id / $accountNumber: $($_.Exception.Message)"
+        }
+    }
+
+    # Advance pagination
+    $exclusiveStartKey = $pageResult.LastEvaluatedKey
+    $page++
+} while ($exclusiveStartKey)
+
+Write-Host "`nDone. $updatedCount items updated. See '$LogFile' for details."
+
