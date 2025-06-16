@@ -232,9 +232,14 @@ fi
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── Configuration ─────────────
 TABLE="test"
 LOG="expiration_update_log.csv"
 EXP_DAYS=60
+
+# NEW: values to filter by
+BATCH_ID="yourBatchIdValue"
+PCLM_TYPE="yourPclmTypeValue"
 
 # Compute expiration epoch (UTC now + EXP_DAYS days)
 EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
@@ -251,11 +256,12 @@ while :; do
   PAGE=$((PAGE+1))
   echo "▶ Scanning page $PAGE..."
 
-  # 1) Scan for items missing 'expiration', output ID & ACCOUNT as text:
+  # 1) Scan for items missing 'expiration' and matching BatchID & PCLMType:
   if [[ -n "$NEXT_TOKEN" ]]; then
     RAW_LIST=$(aws dynamodb scan \
       --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration)" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
       --projection-expression "ID,ACCOUNTNUMBER" \
       --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
       --output text \
@@ -263,7 +269,8 @@ while :; do
   else
     RAW_LIST=$(aws dynamodb scan \
       --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration)" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
       --projection-expression "ID,ACCOUNTNUMBER" \
       --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
       --output text)
@@ -277,8 +284,8 @@ while :; do
 
   # 2) Process each line (ID<TAB>ACCOUNTNUMBER)
   while read -r ID ACC; do
-    ID=$(echo "$ID" | tr -d '\r\n[:space:]')
-    ACC=$(echo "$ACC" | tr -d '\r\n[:space:]')
+    ID=${ID//$'\r'/}
+    ACC=${ACC//$'\r'/}
 
     aws dynamodb update-item \
       --table-name "$TABLE" \
@@ -291,10 +298,11 @@ while :; do
     ((UPDATED++))
   done <<< "$RAW_LIST"
 
-  # 3) Get NextToken for pagination (AWS CLI v2)
+  # 3) Get NextToken for pagination (AWS CLI v2), with same filter
   NEXT_TOKEN=$(aws dynamodb scan \
     --table-name "$TABLE" \
-    --filter-expression "attribute_not_exists(expiration)" \
+    --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+    --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
     --projection-expression "ID" \
     --query "NextToken" \
     --output text)
@@ -308,4 +316,5 @@ if (( UPDATED > 0 )); then
   echo
   echo "Processed $PAGE pages, updated $UPDATED records. See $LOG."
 fi
+
 
