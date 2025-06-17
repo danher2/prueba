@@ -103,3 +103,66 @@ ls batch_*.json \
   ' _ {}
 
 echo "All batches submitted."
+
+
+=====================================================================
+#!/usr/bin/env bash
+set -euo pipefail
+
+TABLE="test"
+BATCH_ID="yourBatchIdValue"
+PCLM_TYPE="yourPclmTypeValue"
+
+# Remove any old output
+> keys_to_update.txt
+
+NEXT_TOKEN=""
+while :; do
+  if [[ -n "$NEXT_TOKEN" ]]; then
+    aws dynamodb scan \
+      --table-name "$TABLE" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
+      --projection-expression "ID,ACCOUNTNUMBER" \
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
+      --output text \
+      --starting-token "$NEXT_TOKEN" \
+      >> keys_to_update.txt
+  else
+    aws dynamodb scan \
+      --table-name "$TABLE" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
+      --projection-expression "ID,ACCOUNTNUMBER" \
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
+      --output text \
+      >> keys_to_update.txt
+  fi
+
+  # ---- begin NextToken fetch with error-catch and debug ----
+  set +e
+  RAW_NEXT=$(aws dynamodb scan \
+    --table-name "$TABLE" \
+    --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+    --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
+    --projection-expression "ID" \
+    --query "NextToken" \
+    --output text 2>&1)
+  RC=$?
+  set -e
+
+  echo "DEBUG: NextToken raw result=[$RAW_NEXT], rc=$RC"
+
+  # If the call failed (e.g. because it tried to use "None" as an ExclusiveStartKey),
+  # or if it returned the literal string "None", treat that as end-of-table:
+  if (( RC != 0 )) || [[ "$RAW_NEXT" == "None" ]] || [[ -z "$RAW_NEXT" ]]; then
+    echo "✅ Reached end of table—exported $(wc -l < keys_to_update.txt) keys."
+    break
+  fi
+
+  NEXT_TOKEN=$RAW_NEXT
+  # ---- end NextToken fetch ----
+done
+
+echo "Export complete: $(wc -l < keys_to_update.txt) keys written."
+
