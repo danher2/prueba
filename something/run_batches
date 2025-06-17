@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PARALLEL=5
+IN_DIR="batches"
+DONE_DIR="$IN_DIR/done"
+
+# Ensure the “done” directory exists
+mkdir -p "$DONE_DIR"
+
+echo "Running batch updates with $PARALLEL parallel workers..."
+
+# Process each chunk_*.json under batches/, then move it to done/ on success
+ls "$IN_DIR"/chunk_*.json \
+  | xargs -P "$PARALLEL" -n1 -I {} sh -c '
+    echo "Processing {}…"
+    if aws dynamodb batch-write-item --request-items file://"$1"; then
+      mv "$1" '"$DONE_DIR"'
+    else
+      echo "❌ Failed to process $1" >&2
+    fi
+  ' _ {}
+
+echo "All batches submitted."
