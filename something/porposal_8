@@ -410,3 +410,96 @@ if (( UPDATED > 0 )); then
 fi
 
 
+=======================================================================================
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Configuration ─────────────
+TABLE="test"
+EXP_DAYS=60
+PAGE_SIZE=1000              # max items to fetch per Scan “page”
+
+# Filter values
+BATCH_ID="yourBatchIdValue"
+PCLM_TYPE="yourPclmTypeValue"
+
+# Compute expiration epoch (UTC now + EXP_DAYS days)
+EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
+
+NEXT_TOKEN=""
+UPDATED=0
+PAGE=0
+
+while :; do
+  # ── Page counter & message ─────────────
+  PAGE=$((PAGE+1))
+  echo "▶ Scanning page $PAGE..."
+
+  # 1) Scan for up to $PAGE_SIZE items missing 'expiration' & matching filters
+  if [[ -n "$NEXT_TOKEN" ]]; then
+    RAW_LIST=$(aws dynamodb scan \
+      --table-name "$TABLE" \
+      --limit "$PAGE_SIZE" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
+      --projection-expression "ID,ACCOUNTNUMBER" \
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
+      --output text \
+      --starting-token "$NEXT_TOKEN")
+  else
+    RAW_LIST=$(aws dynamodb scan \
+      --table-name "$TABLE" \
+      --limit "$PAGE_SIZE" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
+      --projection-expression "ID,ACCOUNTNUMBER" \
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
+      --output text)
+  fi
+
+  # If there’s nothing to update on this page, exit
+  if [[ -z "$RAW_LIST" ]]; then
+    echo "No items found without an expiration—nothing to update."
+    break
+  fi
+
+  # 2) Update each record, track live count
+  while read -r ID ACC; do
+    ID=${ID//$'\r'/}
+    ACC=${ACC//$'\r'/}
+
+    aws dynamodb update-item \
+      --table-name "$TABLE" \
+      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
+      --update-expression "SET expiration = :exp" \
+      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
+      --return-values NONE
+
+    ((UPDATED++))
+    printf '\rRecords processed: %d' "$UPDATED"
+  done <<< "$RAW_LIST"
+  printf '\n'
+
+  # 3) Get NextToken for the next page (same filters & limit)
+  NEXT_TOKEN=$(aws dynamodb scan \
+    --table-name "$TABLE" \
+      --limit "$PAGE_SIZE" \
+      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
+      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
+      --projection-expression "ID" \
+      --query "NextToken" \
+      --output text)
+
+  # If no more pages remain, stop
+  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
+done
+
+# Final summary
+if (( UPDATED > 0 )); then
+  echo
+  echo "Processed $PAGE pages, updated $UPDATED records."
+fi
+
+
+
