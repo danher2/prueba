@@ -229,4 +229,8 @@ done
 
 echo "Export complete: $(wc -l < keys_to_update.txt) keys written."
 
+=========================================================================
+
+RAW_NEXT=${RAW_NEXT%%$'\n'*}
+
 
