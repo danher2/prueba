@@ -87,31 +87,40 @@ done
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── Configuration ───────────────────────────────────
 EXPIRATION=$(date -u -d "+60 days" +%s)
+KEYFILE="keys_to_update.txt"
+OUTDIR="batches"
+CHUNK_PREFIX="chunk_"
 
-# 1) Split keys into 25-line chunks named batch_aa, batch_ab, …
-split -l 25 keys_to_update.txt batch_
+# ── Prepare output directory ────────────────────────
+rm -rf "$OUTDIR"
+mkdir -p "$OUTDIR"
 
-# 2) For each chunk, emit its JSON (no trailing comma on last item) then delete the chunk file
-for chunk in batch_*; do
-  jsonfile="${chunk}.json"
+# ── 1) Split into 25-line chunk files under batches/ ─
+split -l 25 "$KEYFILE" "$OUTDIR/${CHUNK_PREFIX}"
+
+# ── 2) For each chunk, emit its JSON batch under batches/ ─
+for chunk in "$OUTDIR/${CHUNK_PREFIX}"*; do
+  basename=$(basename "$chunk")            # e.g. chunk_aa
+  jsonfile="$OUTDIR/${basename}.json"      # e.g. batches/chunk_aa.json
 
   {
     echo '{'
     echo '  "test": ['
 
-    # read all lines into an array so we can detect the last element
+    # load all lines so we can detect the last one
     mapfile -t lines < "$chunk"
     count=${#lines[@]}
 
-    for i in "${!lines[@]}"; do
-      # split the tab-separated ID and ACCOUNTNUMBER
-      IFS=$'\t' read -r ID ACC <<< "${lines[i]}"
-      # strip any stray CR
+    for idx in "${!lines[@]}"; do
+      # split ID and ACCOUNTNUMBER
+      IFS=$'\t' read -r ID ACC <<< "${lines[idx]}"
+      # strip stray CR
       ID=${ID//$'\r'/}
       ACC=${ACC//$'\r'/}
 
-      # print the object
+      # output the item
       cat <<EOF
     {
       "PutRequest": {
@@ -123,11 +132,11 @@ for chunk in batch_*; do
       }
     }EOF
 
-      # only add a comma if this is not the last item
-      if (( i < count - 1 )); then
-        printf ',\n'
+      # only append a comma if this isn’t the last item
+      if (( idx < count - 1 )); then
+        echo ","
       else
-        printf '\n'
+        echo
       fi
     done
 
@@ -136,8 +145,7 @@ for chunk in batch_*; do
   } > "$jsonfile"
 
   echo "Prepared $jsonfile"
-  # remove the raw chunk so only JSON files remain
-  rm -- "$chunk"
 done
+
 
 
