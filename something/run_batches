@@ -17,7 +17,7 @@ ls "$IN_DIR"/chunk_*.json \
     if aws dynamodb batch-write-item --request-items file://"$1"; then
       mv "$1" '"$DONE_DIR"'
     else
-      echo "❌ Failed to process $1" >&2
+      echo "Failed to process $1" >&2
     fi
   ' _ {}
 
