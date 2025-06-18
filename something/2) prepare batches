@@ -82,3 +82,62 @@ EOF
   echo "Prepared $jsonfile"
 done
 
+===================================================================
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+EXPIRATION=$(date -u -d "+60 days" +%s)
+
+# 1) Split keys into 25-line chunks named batch_aa, batch_ab, …
+split -l 25 keys_to_update.txt batch_
+
+# 2) For each chunk, emit its JSON (no trailing comma on last item) then delete the chunk file
+for chunk in batch_*; do
+  jsonfile="${chunk}.json"
+
+  {
+    echo '{'
+    echo '  "test": ['
+
+    # read all lines into an array so we can detect the last element
+    mapfile -t lines < "$chunk"
+    count=${#lines[@]}
+
+    for i in "${!lines[@]}"; do
+      # split the tab-separated ID and ACCOUNTNUMBER
+      IFS=$'\t' read -r ID ACC <<< "${lines[i]}"
+      # strip any stray CR
+      ID=${ID//$'\r'/}
+      ACC=${ACC//$'\r'/}
+
+      # print the object
+      cat <<EOF
+    {
+      "PutRequest": {
+        "Item": {
+          "ID": {"S":"$ID"},
+          "ACCOUNTNUMBER": {"S":"$ACC"},
+          "expiration": {"N":"$EXPIRATION"}
+        }
+      }
+    }EOF
+
+      # only add a comma if this is not the last item
+      if (( i < count - 1 )); then
+        printf ',\n'
+      else
+        printf '\n'
+      fi
+    done
+
+    echo '  ]'
+    echo '}'
+  } > "$jsonfile"
+
+  echo "Prepared $jsonfile"
+  # remove the raw chunk so only JSON files remain
+  rm -- "$chunk"
+done
+
+
