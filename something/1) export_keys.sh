@@ -231,6 +231,166 @@ echo "Export complete: $(wc -l < keys_to_update.txt) keys written."
 
 =========================================================================
 
-RAW_NEXT=${RAW_NEXT%%$'\n'*}
+=====================POWERSHELL VERSION =================================
+#!/usr/bin/env pwsh
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# --- Configuration
+$Table    = 'test'
+$BatchId  = '01'
+$PclmType = 'PCLD'
+
+# --- Prepare a valid JSON file for AWS (no BOM)
+$exprFile = Join-Path $PSScriptRoot 'expr.json'
+$jsonText = @"
+{
+  ":batchID": { "S": "$BatchId" },
+  ":pclmType": { "S": "$PclmType" }
+}
+"@
+# Write it without a BOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($exprFile, $jsonText, $utf8NoBom)
+
+# --- Paging loop, writing to items_to_update.txt
+$NextToken      = ''
+$firstIteration = $true
+
+while ($true) {
+    # Build the scan arguments
+    $scanArgs = @(
+        'dynamodb','scan',
+        '--table-name',        $Table,
+        '--filter-expression', 'attribute_not_exists(expiration) AND BatchId = :batchID AND PclmType = :pclmType',
+        '--expression-attribute-values', "file://$exprFile",
+        '--projection-expression',       'ID,ACCOUNTNUMBER',
+        '--query',                       'Items[*].[ID.S,ACCOUNTNUMBER.S]',
+        '--output',                      'text'
+    )
+    if (-not [string]::IsNullOrEmpty($NextToken)) {
+        $scanArgs += '--starting-token'
+        $scanArgs += $NextToken
+    }
+
+    # On first iteration use > (to start on line 1), afterwards use >>
+    if ($firstIteration) {
+        aws @scanArgs > items_to_update.txt
+        $firstIteration = $false
+    }
+    else {
+        aws @scanArgs >> items_to_update.txt
+    }
+
+    # Fetch NextToken for pagination
+    $tokenArgs = @(
+        'dynamodb','scan',
+        '--table-name',        $Table,
+        '--filter-expression', 'attribute_not_exists(expiration) AND BatchId = :batchID AND PclmType = :pclmType',
+        '--expression-attribute-values', "file://$exprFile",
+        '--projection-expression',       'ID',
+        '--query',                       'NextToken',
+        '--output',                      'text'
+    )
+    $rawNext = aws @tokenArgs 2>&1
+
+    # Trim after first newline and strip CRs
+    $rawNext = ($rawNext -split "`n")[0]
+    $rawNext = $rawNext -replace "`r", ''
+
+    # Normalize literal "None"
+    if ($rawNext -eq 'None') {
+        $rawNext = ''
+    }
+
+    # End of table?
+    if ([string]::IsNullOrEmpty($rawNext)) {
+        $count = (Get-Content items_to_update.txt | Measure-Object -Line).Lines
+        Write-Host "Export complete: $count items written."
+        break
+    }
+
+    # Prepare for next page
+    $NextToken = $rawNext
+}
+
+# --- Cleanup
+Remove-Item $exprFile
 
 
+===================================== CMD VERSION ====================================================
+
+@echo off
+rem -------------------------------
+rem export-items.bat
+rem Replicates your Bash pagination + export logic in plain CMD
+rem -------------------------------
+setlocal enableextensions enabledelayedexpansion
+
+rem --- 0) Configuration
+set "TABLE=test"
+set "BATCH_ID=01"
+set "PCLM_TYPE=PCLD"
+
+rem --- 1) Write a clean JSON file (no BOM) for --expression-attribute-values
+(
+  echo {
+  echo  ":batchID": { "S": "%BATCH_ID%" },
+  echo  ":pclmType": { "S": "%PCLM_TYPE%" }
+  echo }
+) > expr.json
+
+rem --- 2) Prepare empty output file
+type nul > items_to_update.txt
+set "NEXT_TOKEN="
+
+:LOOP
+  rem --- 3) Fetch one page of items
+  if defined NEXT_TOKEN (
+    aws dynamodb scan ^
+      --table-name %TABLE% ^
+      --filter-expression "attribute_not_exists(expiration) AND BatchId = :batchID AND PclmType = :pclmType" ^
+      --expression-attribute-values file://expr.json ^
+      --projection-expression "ID,ACCOUNTNUMBER" ^
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" ^
+      --output text ^
+      --starting-token "!NEXT_TOKEN!" >> items_to_update.txt
+  ) else (
+    aws dynamodb scan ^
+      --table-name %TABLE% ^
+      --filter-expression "attribute_not_exists(expiration) AND BatchId = :batchID AND PclmType = :pclmType" ^
+      --expression-attribute-values file://expr.json ^
+      --projection-expression "ID,ACCOUNTNUMBER" ^
+      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" ^
+      --output text >> items_to_update.txt
+  )
+
+  rem --- 4) Pull out the NextToken (first line only)
+  for /f "delims=" %%A in ('^
+    aws dynamodb scan ^
+      --table-name %TABLE% ^
+      --filter-expression "attribute_not_exists(expiration) AND BatchId = :batchID AND PclmType = :pclmType" ^
+      --expression-attribute-values file://expr.json ^
+      --projection-expression "ID" ^
+      --query "NextToken" ^
+      --output text
+  ^') do set "RAW_NEXT=%%A"
+
+  rem --- 5) Normalize literal "None"
+  if "!RAW_NEXT!"=="None" set "RAW_NEXT="
+
+  rem --- 6) If no token, we’re done
+  if not defined RAW_NEXT (
+    for /f %%C in ('type items_to_update.txt ^| find /v /c ""') do set "COUNT=%%C"
+    echo Reached end of table exported !COUNT! items.
+    goto END
+  )
+
+  rem --- 7) Otherwise, loop again
+  set "NEXT_TOKEN=!RAW_NEXT!"
+  goto LOOP
+
+:END
+rem --- 8) Cleanup
+del expr.json
+endlocal
