@@ -55,4 +55,91 @@ cat "$IN_FILE" | xargs -I{} -P "$PARALLEL" bash -c 'process_item "$@"' _ "{}"
 
 printf '\n✅ All items updated.\n'
 
-=====================POWERSHELL=================================================
+=====================BAT=================================================
+
+@echo off
+setlocal EnableDelayedExpansion
+
+rem ── Determine script directory and configuration ─────────────
+set "SCRIPT_DIR=%~dp0"
+set "TABLE=test"
+
+rem ── Compute UNIX timestamp for UTC now + 60 days via PowerShell ─
+for /f %%A in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.AddDays(60).ToUnixTimeSeconds()"') do set "EXPIRATION=%%A"
+
+rem ── Input and progress file in script directory ───────────────
+set "IN_FILE=%SCRIPT_DIR%items_to_update.txt"
+set "PROGRESS_FILE=%SCRIPT_DIR%progress.txt"
+> "%PROGRESS_FILE%" type NUL
+
+rem ── Initial messages ─────────────────────────────────────────
+echo Add expiration date to missing items
+for /f %%A in ('find /v /c "" ^< "%IN_FILE%"') do set "TOTAL_ITEMS=%%A"
+echo Total items to update: %TOTAL_ITEMS%
+
+rem ── Capture a real carriage return into variable CR ───────────
+for /F %%A in ('copy /Z "%~f0" nul') do set "CR=%%A"
+
+set /a PROGRESS_COUNT=0
+
+rem ── Process each raw line ────────────────────────────────────
+for /f "usebackq delims=" %%L in ("%IN_FILE%") do (
+    rem Trim trailing spaces/tabs
+    call :trim "%%L" cleaned
+
+    rem Split into ID and ACC (whitespace-delimited)
+    for /f "tokens=1,2" %%I in ("!cleaned!") do (
+        call :process_item "%%I" "%%J"
+        >>"%PROGRESS_FILE%" echo ok
+        set /a PROGRESS_COUNT+=1
+        <nul set /p ="Progress: !PROGRESS_COUNT!/%TOTAL_ITEMS%!CR!"
+    )
+)
+
+echo.
+echo [OK] All items updated.
+exit /b 0
+
+rem ── Subroutine: process one item ─────────────────────────────
+:process_item
+setlocal
+set "ID=%~1"
+set "ACC=%~2"
+
+if "%ID%"=="" (
+    echo [ERROR] Skipping malformed line: "%~1    %~2%" >&2
+    exit /b 1
+)
+if "%ACC%"=="" (
+    echo [ERROR] Skipping malformed line: "%~1    %~2%" >&2
+    exit /b 1
+)
+
+aws dynamodb update-item ^
+    --table-name "%TABLE%" ^
+    --key "{\"ID\":{\"S\":\"%ID%\"},\"ACCOUNTNUMBER\":{\"S\":\"%ACC%\"}}" ^
+    --update-expression "SET expiration = :exp" ^
+    --expression-attribute-values "{\":exp\":{\"N\":\"%EXPIRATION%\"}}" ^
+    --output text >nul
+
+if errorlevel 1 (
+    echo [ERROR] Failed to update %ID% / %ACC% >&2
+    exit /b 1
+)
+endlocal
+exit /b 0
+
+rem ── Subroutine: trim trailing spaces & tabs ─────────────────
+:trim
+rem %1 = input string, returns trimmed in variable named by %2
+setlocal EnableDelayedExpansion
+set "s=%~1"
+:trimloop
+if defined s (
+  for %%T in ("!s:~-1!") do (
+    if "%%~T"==" "  (set "s=!s:~0,-1!" & goto trimloop)
+    if "%%~T"=="	" (set "s=!s:~0,-1!" & goto trimloop)
+  )
+)
+endlocal & set "%~2=%s%"
+exit /b 0
