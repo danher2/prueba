@@ -1,0 +1,58 @@
+========================SH ===============================
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Configuration ───────────────────────────────────────────
+PARALLEL=5
+TABLE="test"
+EXPIRATION=$(date -u -d "+60 days" +%s)
+IN_FILE="items_to_update.txt"
+COUNTER_FILE=".progress_counter"
+
+# ── Count total lines ───────────────────────────────────────
+TOTAL_ITEMS=$(wc -l < "$IN_FILE" | tr -d ' ')
+echo 0 > "$COUNTER_FILE"
+
+# ── Export variables for child shells ───────────────────────
+export TABLE EXPIRATION TOTAL_ITEMS COUNTER_FILE
+
+# ── Define a helper that updates one item ───────────────────
+process_item() {
+  local raw_line="$1"
+
+  # Remove hidden/control characters and split into ID and ACC
+  raw_line=$(echo "$raw_line" | tr -d '\r\n' | tr -cd '[:print:]\t')
+  IFS=$'\t' read -r ID ACC <<< "$raw_line"
+
+  if [[ -z "$ID" || -z "$ACC" ]]; then
+    echo "❌ Skipping malformed line: '$raw_line'" >&2
+    exit 1
+  fi
+
+  aws dynamodb update-item \
+    --table-name "$TABLE" \
+    --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
+    --update-expression "SET expiration = :exp" \
+    --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
+    --output text > /dev/null \
+  || {
+    echo "❌ Failed to update $ID / $ACC" >&2
+    exit 1
+  }
+
+  # Update progress counter (unsafe in parallel, but good enough)
+  CURRENT=$(<"$COUNTER_FILE")
+  ((CURRENT++))
+  echo "$CURRENT" > "$COUNTER_FILE"
+  printf '\rProgress: %d/%d' "$CURRENT" "$TOTAL_ITEMS"
+}
+export -f process_item
+
+echo "Running update-item calls with $PARALLEL parallel workers..."
+
+# ── Read lines and pass to parallel workers ─────────────────
+cat "$IN_FILE" | xargs -I{} -P "$PARALLEL" bash -c 'process_item "$@"' _ "{}"
+
+printf '\n✅ All items updated.\n'
+
+=====================POWERSHELL=================================================
