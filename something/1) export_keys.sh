@@ -210,7 +210,12 @@ while :; do
     --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
     --projection-expression "ID" \
     --query "NextToken" \
-    --output text)
+    --output text 2>&1)
+
+  # Remove everything after the first newline  character
+  RAW_NEXT=${RAW_NEXT%%$'\n'*}
+  # Remove all carriage return characters
+  RAW_NEXT=${RAW_NEXT//$'\r'/}
 
   # ── 3) Normalize away the literal "None" or empty ─────────────
   if [[ "$RAW_NEXT" == "None" ]]; then
