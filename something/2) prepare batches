@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+EXPIRATION=$(date -u -d "+60 days" +%s)
+
+# Split into 25-line chunks
+split -l 25 keys_to_update.txt batch_
+
+# Build one JSON file per chunk
+for chunk in batch_*; do
+  jsonfile="${chunk}.json"
+  {
+    echo '{'
+    echo '  "test": ['
+    while read -r ID ACC; do
+      ID=${ID//$'\r'/}
+      ACC=${ACC//$'\r'/}
+      cat <<EOF
+    {
+      "PutRequest": {
+        "Item": {
+          "ID": {"S": "$ID"},
+          "ACCOUNTNUMBER": {"S": "$ACC"},
+          "expiration": {"N": "$EXPIRATION"}
+        }
+      }
+    },
+EOF
+    done < "$chunk"
+    echo '  ]'
+    echo '}'
+  } | sed '$s/},/}/' > "$jsonfile"
+  echo "Prepared $jsonfile"
+done
+
+==========================================================
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Configuration ───────────────────────────────────
+EXPIRATION=$(date -u -d "+60 days" +%s)
+KEYFILE="keys_to_update.txt"
+OUTDIR="batches"
+CHUNK_PREFIX="chunk_"
+
+# ── Prepare output directory ────────────────────────
+rm -rf "$OUTDIR"
+mkdir -p "$OUTDIR"
+
+# ── 1) Split into 25-line chunk files under batches/ ─
+split -l 25 "$KEYFILE" "$OUTDIR/${CHUNK_PREFIX}"
+
+# ── 2) For each chunk, emit its JSON batch under batches/ ─
+for chunk in "$OUTDIR/${CHUNK_PREFIX}"*; do
+  basename=$(basename "$chunk")            # e.g. chunk_aa
+  jsonfile="$OUTDIR/${basename}.json"      # e.g. batches/chunk_aa.json
+
+  {
+    echo '{'
+    echo '  "test": ['
+    while read -r ID ACC; do
+      # strip any stray CR
+      ID=${ID//$'\r'/}
+      ACC=${ACC//$'\r'/}
+      cat <<EOF
+    {
+      "PutRequest": {
+        "Item": {
+          "ID": {"S":"$ID"},
+          "ACCOUNTNUMBER": {"S":"$ACC"},
+          "expiration": {"N":"$EXPIRATION"}
+        }
+      }
+    },
+EOF
+    done < "$chunk"
+    echo '  ]'
+    echo '}'
+  } | sed '$s/},/}/' > "$jsonfile"
+
+  echo "Prepared $jsonfile"
+done
+
+===================================================================
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Configuration ───────────────────────────────────
+EXPIRATION=$(date -u -d "+60 days" +%s)
+KEYFILE="keys_to_update.txt"
+OUTDIR="batches"
+CHUNK_PREFIX="chunk_"
+
+# ── Prepare output directory ────────────────────────
+rm -rf "$OUTDIR"
+mkdir -p "$OUTDIR"
+
+# ── 1) Split into 25-line chunk files under batches/ ─
+split -l 25 "$KEYFILE" "$OUTDIR/${CHUNK_PREFIX}"
+
+# ── 2) For each chunk, emit its JSON batch under batches/ ─
+for chunk in "$OUTDIR/${CHUNK_PREFIX}"*; do
+  basename=$(basename "$chunk")            # e.g. chunk_aa
+  jsonfile="$OUTDIR/${basename}.json"      # e.g. batches/chunk_aa.json
+
+  {
+    echo '{'
+    echo '  "test": ['
+
+    # load all lines so we can detect the last one
+    mapfile -t lines < "$chunk"
+    count=${#lines[@]}
+
+    for idx in "${!lines[@]}"; do
+      # split ID and ACCOUNTNUMBER
+      IFS=$'\t' read -r ID ACC <<< "${lines[idx]}"
+      # strip stray CR
+      ID=${ID//$'\r'/}
+      ACC=${ACC//$'\r'/}
+
+      # output the item
+      cat <<EOF
+    {
+      "PutRequest": {
+        "Item": {
+          "ID": {"S":"$ID"},
+          "ACCOUNTNUMBER": {"S":"$ACC"},
+          "expiration": {"N":"$EXPIRATION"}
+        }
+      }
+    }
+EOF
+
+      # only append a comma if this isn’t the last item
+      if (( idx < count - 1 )); then
+        echo ","
+      else
+        echo
+      fi
+    done
+
+    echo '  ]'
+    echo '}'
+  } > "$jsonfile"
+
+  echo "Prepared $jsonfile"
+  #remove the raw chunk so only json files remain
+  rm -- "$chunk"
+done
+
+====================POWERSHELL===========================================
+#!/usr/bin/env pwsh
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# --- Base directory (where this script lives)
+$BaseDir = $PSScriptRoot
+
+# --- Configuration
+$Expiration = [int](
+    (Get-Date).ToUniversalTime().AddDays(60) - 
+    [datetime]'1970-01-01T00:00:00Z'
+).TotalSeconds
+
+$KeyFile     = Join-Path $BaseDir 'items_to_update.txt'
+$OutDir      = Join-Path $BaseDir 'batches'
+$ChunkPrefix = 'chunk_'
+
+# --- Prepare output directory
+if (Test-Path $OutDir) {
+    Remove-Item $OutDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $OutDir | Out-Null
+
+# --- UTF8 without BOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+# --- Helper: 0 → aa, 1 → ab, … 
+function Get-AlphabetSuffix {
+    param([int]$Index)
+    $first  = [int]([math]::Floor($Index / 26))
+    $second = [int]($Index % 26)
+    $a = [char](97 + $first)
+    $b = [char](97 + $second)
+    return "$a$b"
+}
+
+# --- 1) Split into 25-line chunk files
+$allLines = Get-Content $KeyFile
+for ($i = 0; $i -lt $allLines.Count; $i += 25) {
+    $chunkIndex = [int]([math]::Floor($i / 25))
+    $suffix     = Get-AlphabetSuffix $chunkIndex
+    $chunkPath  = Join-Path $OutDir "$ChunkPrefix$suffix"
+
+    # Grab up to 25 lines
+    $slice = $allLines[$i..([math]::Min($i+24, $allLines.Count-1))]
+
+    # Write the raw chunk (absolute path, no BOM)
+    [System.IO.File]::WriteAllLines($chunkPath, $slice, $utf8NoBom)
+}
+
+# --- 2) For each chunk, emit JSON and delete the chunk
+Get-ChildItem -Path $OutDir -Filter "$ChunkPrefix*" | ForEach-Object {
+    $chunkPath = $_.FullName
+    $basename  = $_.Name                  # e.g. "chunk_aa"
+    $jsonName  = "$basename.json"
+    $jsonPath  = Join-Path $OutDir $jsonName
+
+    # Build JSON lines
+    $jsonLines = @(
+        '{'
+      , '  "test": ['
+    )
+
+    $chunkLines = Get-Content $chunkPath
+    for ($idx = 0; $idx -lt $chunkLines.Count; $idx++) {
+        # Split on tab, strip CR if any
+        $parts = $chunkLines[$idx] -split "`t"
+        $id    = ($parts[0] -replace "`r",'')
+        $acc   = ($parts[1] -replace "`r",'')
+
+        $jsonLines += '    {'
+        $jsonLines += '      "PutRequest": {'
+        $jsonLines += '        "Item": {'
+        $jsonLines += '          "ID": {"S":"' + $id + '"},'
+        $jsonLines += '          "ACCOUNTNUMBER": {"S":"' + $acc + '"},'
+        $jsonLines += '          "expiration": {"N":"' + $Expiration + '"}'
+        $jsonLines += '        }'
+        $jsonLines += '      }'
+        $jsonLines += '    }'
+
+        if ($idx -lt $chunkLines.Count - 1) {
+            $jsonLines += ','
+        }
+    }
+
+    $jsonLines += '  ]'
+    $jsonLines += '}'
+
+    # Write the JSON file (absolute path, no BOM)
+    $jsonContent = $jsonLines -join "`n"
+    [System.IO.File]::WriteAllText($jsonPath, $jsonContent, $utf8NoBom)
+
+    # Only print the file name
+    Write-Host "Prepared $jsonName"
+
+    # Delete the chunk file
+    Remove-Item $chunkPath -Force
+}
+
+
+
+========================CMD==================================================
+@echo off
+setlocal EnableDelayedExpansion
+
+rem ------------------------------------------------
+rem 1) Compute expiration = UNIX epoch for UTC now + 60 days
+rem ------------------------------------------------
+for /f "delims=" %%E in ('powershell -NoProfile -Command "[int](Get-Date).ToUniversalTime().AddDays(60).Subtract([datetime]'1970-01-01').TotalSeconds"') do (
+    set "EXPIRATION=%%E"
+)
+
+rem ------------------------------------------------
+rem 2) Configuration
+rem ------------------------------------------------
+set "KEYFILE=items_to_update.txt"
+set "OUTDIR=batches"
+set "CHUNK_PREFIX=chunk_"
+
+if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%"
+mkdir "%OUTDIR%"
+
+rem Alphabet for suffix generation
+set "alphabet=abcdefghijklmnopqrstuvwxyz"
+
+rem ------------------------------------------------
+rem 3) Split into 25-line chunk files
+rem ------------------------------------------------
+set "counter=0"
+set "fileIndex=0"
+call :CalcSuffix %fileIndex% suffix
+set "chunkFile=%OUTDIR%\%CHUNK_PREFIX%%suffix%"
+type nul > "%chunkFile%"
+
+for /f "usebackq delims=" %%L in ("%KEYFILE%") do (
+    >>"%chunkFile%" echo(%%L
+    set /a counter+=1
+    if !counter! GEQ 25 (
+        set /a counter=0
+        set /a fileIndex+=1
+        call :CalcSuffix !fileIndex! suffix
+        set "chunkFile=%OUTDIR%\%CHUNK_PREFIX%!suffix!"
+        type nul > "!chunkFile!"
+    )
+)
+
+rem ------------------------------------------------
+rem 4) For each chunk, emit JSON and delete the chunk
+rem ------------------------------------------------
+for %%F in ("%OUTDIR%\%CHUNK_PREFIX%*") do (
+    set "basename=%%~nF"
+    set "jsonName=!basename!.json"
+    set "jsonPath=%OUTDIR%\!jsonName!"
+
+    rem Count how many lines in this chunk
+    for /f %%C in ('type "%%F" ^| find /v /c ""') do set "total=%%C"
+
+    set "idx=0"
+    > "!jsonPath!" (
+        echo({
+        echo(  "test": [
+    )
+
+    rem Loop items, split on whitespace (tabs/spaces)
+    for /f "usebackq tokens=1,2" %%I in ("%%F") do (
+        set "ID=%%~I"
+        set "ACC=%%~J"
+
+        >> "!jsonPath!" echo(    {
+        >> "!jsonPath!" echo(      "PutRequest": {
+        >> "!jsonPath!" echo(        "Item": {
+        >> "!jsonPath!" echo(          "ID": {"S":"!ID!"},
+        >> "!jsonPath!" echo(          "ACCOUNTNUMBER": {"S":"!ACC!"},
+        >> "!jsonPath!" echo(          "expiration": {"N":"%EXPIRATION%"}
+        >> "!jsonPath!" echo(        }
+        >> "!jsonPath!" echo(      }
+        >> "!jsonPath!" echo(    }
+
+        set /a idx+=1
+        if !idx! LSS !total! (
+            >> "!jsonPath!" echo(    ,
+        )
+    )
+
+    >> "!jsonPath!" echo(  ]
+    >> "!jsonPath!" echo(}
+
+    echo Prepared !jsonName!
+    del "%%F"
+)
+
+endlocal
+goto :EOF
+
+:CalcSuffix
+rem %1 = zero-based index, returns suffix in var named by %2
+set /a first=%1 / 26
+set /a second=%1 %% 26
+call set "firstChar=%%alphabet:~%first%,1%%"
+call set "secondChar=%%alphabet:~%second%,1%%"
+set "%2=%firstChar%%secondChar%"
+exit /b
+
+
+
