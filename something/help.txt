@@ -1,0 +1,162 @@
+package com.yourpkg; // adjust
+
+import java.util.*;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class ProtegrityService {
+    private static final Logger log = LoggerFactory.getLogger(ProtegrityService.class);
+
+    // Injected collaborators (adjust names/types to your project)
+    private final ProtegrityMapper mapper;
+    private final ProtegrityRestClient restClient;
+    private final String detokenizeEndpoint;
+    private final AlternativeDetokenizeService altDetokenizeService; // your “plan B” service
+
+    public ProtegrityService(ProtegrityMapper mapper,
+                             ProtegrityRestClient restClient,
+                             String detokenizeEndpoint,
+                             AlternativeDetokenizeService altDetokenizeService) {
+        this.mapper = mapper;
+        this.restClient = restClient;
+        this.detokenizeEndpoint = detokenizeEndpoint;
+        this.altDetokenizeService = altDetokenizeService;
+    }
+
+    public void detokenizeTradelineAccounts(UnderwritingRequest underwritingRequest) throws ProtegrityException {
+        // --- 1) Build payload and quick skip if nothing to detokenize ---
+        ProtegrityPayload payloadToSend = mapper.detokenizeTradelineAccounts(underwritingRequest);
+
+        boolean hasAccountsToDetokenize = payloadToSend.getUnsecure().stream()
+            .filter(Objects::nonNull)
+            .map(Unsecure::getAlphanum)
+            .filter(Objects::nonNull)
+            .anyMatch(m -> !m.isEmpty());
+
+        if (!hasAccountsToDetokenize) {
+            log.info("No tradeline accounts to detokenize. Skipping Protegrity call.");
+            return;
+        }
+
+        // --- 2) Call Protegrity for first-pass detokenization ---
+        ProtegrityPayload response = restClient.invokeProtegrityService(payloadToSend, detokenizeEndpoint);
+        if (response == null) {
+            throw new ProtegrityException("PROT_NULL_RESPONSE", "Protegrity returned null payload");
+        }
+
+        // --- 3) Identify entries STILL in alphanumeric/tokenized form in the RESPONSE ---
+        // “Alphanumeric” per your spec: values that still contain at least one LETTER.
+        Predicate<String> stillAlphanumeric = this::containsAnyLetter;
+
+        Set<String> keysNeedingSecondPass = response.getUnsecure().stream()
+            .filter(Objects::nonNull)
+            .map(Unsecure::getAlphanum)
+            .filter(Objects::nonNull)
+            .flatMap(m -> m.entrySet().stream())
+            .filter(e -> stillAlphanumeric.test(nullSafeTrim(e.getValue())))
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        if (keysNeedingSecondPass.isEmpty()) {
+            log.info("All accounts detokenized by Protegrity on first pass.");
+            mapper.setDetokenizeTradelineAccounts(underwritingRequest, response);
+            return;
+        }
+
+        log.info("Second pass needed for {} account(s): {}", keysNeedingSecondPass.size(), keysNeedingSecondPass);
+
+        // --- 4) Build key -> ORIGINAL REAL VALUE map FROM THE PAYLOAD YOU SENT ---
+        Map<String, String> accountsToRetry = new LinkedHashMap<>();
+        for (String key : keysNeedingSecondPass) {
+            Optional<String> originalValue = findValueByKeyInPayload(payloadToSend, key);
+            if (originalValue.isPresent()) {
+                accountsToRetry.put(key, originalValue.get());
+            } else {
+                log.warn("Key '{}' not found in original payload; skipping from second pass.", key);
+            }
+        }
+
+        if (accountsToRetry.isEmpty()) {
+            log.warn("No accounts could be prepared for second pass (none found in original payload).");
+            mapper.setDetokenizeTradelineAccounts(underwritingRequest, response);
+            return;
+        }
+
+        // --- 5) Call the alternative detokenization/tokenization service (Plan B) ---
+        // Expected to return key -> fixedDetokenizedValue
+        Map<String, String> fixedAccounts = altDetokenizeService.detokenizeAccounts(accountsToRetry);
+
+        if (fixedAccounts == null || fixedAccounts.isEmpty()) {
+            log.warn("Alternative detokenize service returned no results. Proceeding without merge.");
+            mapper.setDetokenizeTradelineAccounts(underwritingRequest, response);
+            return;
+        }
+
+        // --- 6) Filter only truly fixed values (not alphanumeric anymore) ---
+        Map<String, String> trulyFixed = fixedAccounts.entrySet().stream()
+            .filter(e -> !stillAlphanumeric.test(nullSafeTrim(e.getValue())))
+            .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue(), (a, b) -> a, LinkedHashMap::new));
+
+        if (trulyFixed.isEmpty()) {
+            log.warn("Alternative detokenize returned only alphanumeric values. No merge performed.");
+            mapper.setDetokenizeTradelineAccounts(underwritingRequest, response);
+            return;
+        }
+
+        // --- 7) Merge fixes back into the FIRST response’s unsecure.alphanum maps ---
+        int replaced = 0;
+        for (Unsecure u : response.getUnsecure()) {
+            if (u == null || u.getAlphanum() == null) continue;
+            Map<String, String> map = u.getAlphanum();
+            for (Map.Entry<String, String> e : trulyFixed.entrySet()) {
+                String k = e.getKey();
+                if (map.containsKey(k)) {
+                    map.put(k, e.getValue());
+                    replaced++;
+                }
+            }
+        }
+
+        log.info("Merged {} fixed account value(s) into the Protegrity response.", replaced);
+
+        // --- 8) Final mapping back into the UnderwritingRequest ---
+        mapper.setDetokenizeTradelineAccounts(underwritingRequest, response);
+    }
+
+    // ---------- helpers ----------
+
+    private Optional<String> findValueByKeyInPayload(ProtegrityPayload payload, String key) {
+        for (Unsecure u : payload.getUnsecure()) {
+            if (u == null || u.getAlphanum() == null) continue;
+            if (u.getAlphanum().containsKey(key)) {
+                return Optional.ofNullable(u.getAlphanum().get(key));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean containsAnyLetter(String s) {
+        if (s == null || s.isBlank()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            if (Character.isLetter(s.charAt(i))) return true;
+        }
+        return false;
+    }
+
+    private String nullSafeTrim(String s) {
+        return s == null ? null : s.trim();
+    }
+
+    // Placeholder for your alternative service:
+    public interface AlternativeDetokenizeService {
+        Map<String, String> detokenizeAccounts(Map<String, String> keyToOriginalValue);
+    }
+
+    // Placeholders for your existing project types:
+    public interface ProtegrityRestClient {
+        ProtegrityPayload invokeProtegrityService(ProtegrityPayload payload, String endpoint) throws ProtegrityException;
+    }
+}
