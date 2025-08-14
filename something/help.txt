@@ -1,3 +1,72 @@
+
+Yes, I fully understand what you’re trying to do — here’s your process in my own words so we’re aligned:
+
+---
+
+## **Current Flow**
+
+1. **Initial Mapping**
+
+   * You take the `UnderwritingRequest` and use your `mapper` to produce a `ProtegrityPayload` (`payloadToSend`).
+   * This payload’s `unsecure.alphanum` map contains **tokenized** account values (alphanumeric placeholders).
+
+2. **Protegrity Detokenization Call**
+
+   * You send `payloadToSend` to `ProtegrityService`’s `invokeProtegrityService`.
+   * You get back `ProtegrityPayload response` (`responseFromProtegrity`), whose `unsecure.alphanum` should now contain **real detokenized account values**.
+
+---
+
+## **Problem**
+
+* Sometimes after detokenization, **some accounts are still in alphanumeric/tokenized format** instead of the expected real values.
+* These accounts need a **second detokenization attempt** via a different service.
+
+---
+
+## **What You Want to Do**
+
+1. **Identify Problematic Accounts**
+
+   * Inspect `responseFromProtegrity.getUnsecure().alphanum` for any entries that are **still tokenized** (contain alphanumeric placeholders instead of real numbers).
+   * For each such entry, **keep the key** (the unique account identifier in the map).
+
+2. **Retrieve Original Values**
+
+   * Use the **keys** from step 1 to go back to `payloadToSend` (the one originally sent to Protegrity).
+   * Look up the real intended values for those accounts in **that payload’s `unsecure.alphanum` map**.
+
+3. **Call Alternative Detokenization Service**
+
+   * Send the **map of account keys → original values** to a different detokenization service (your “plan B” service).
+
+4. **Validate New Response**
+
+   * Check the returned values from this alternative service.
+   * If any are still alphanumeric, you’ll need to decide what to do (log an error, raise an alert, etc.).
+
+5. **Merge Results**
+
+   * If all accounts are now properly detokenized, **update** the `responseFromProtegrity.getUnsecure().alphanum` map with these newly detokenized values.
+   * This way, the final `responseFromProtegrity` has a **complete, fully detokenized set of accounts**.
+
+---
+
+## **Summary**
+
+You are basically implementing a **second-pass correction**:
+
+* First pass = ProtegrityService.
+* Second pass (only for failures) = alternative detokenization service.
+* Then merge fixed values back into the first response so that downstream code sees a complete result.
+
+---
+
+If you want, I can now design the **exact step-by-step algorithm** that does this inside your existing method without breaking the current structure. That would be the next step before writing the actual code.
+
+
+
+
 package com.yourpkg; // adjust
 
 import java.util.*;
