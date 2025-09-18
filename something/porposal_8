@@ -827,3 +827,30 @@ So when the count of visible digits is odd, the suffix gets one more digit than 
 
 For even lengths, the visible digits are split equally around the mask;
 for odd lengths, the extra visible digit is placed at the end (suffix side).
+
+
+
+Center masking (proportional):
+For lengths 1–2, show as-is. For 3, show the first and last digit, mask the middle with *. For 4+, mask the center with up to 3 asterisks (never more than the number of middle digits, and always leaving at least one visible digit on each end). The total length of the masked string equals the original. Distribute the visible digits around the mask proportionally; when the count of visible digits is odd, the extra visible digit goes to the end.
+
+
+public final class MaskUtil {
+    private MaskUtil() {}
+
+    /** Masks the middle of the string with up to 3 asterisks, preserving total length. */
+    public static String maskCentered(String number) {
+        if (number == null) return null;
+        int len = number.length();
+        if (len <= 2) return number;               // nothing to mask
+        if (len == 3) return number.charAt(0) + "*" + number.charAt(2);
+
+        int maskLen = Math.min(3, len - 2);        // keep at least 1 at each end
+        int visible = len - maskLen;
+        int prefixLen = visible / 2;               // floor
+        int suffixLen = visible - prefixLen;       // end gets the extra if odd
+
+        String prefix = number.substring(0, prefixLen);
+        String suffix = number.substring(len - suffixLen);
+        return prefix + "*".repeat(maskLen) + suffix;
+    }
+}
