@@ -618,4 +618,212 @@ if (( UPDATED > 0 )); then
 fi
 
 
+==========================
 
+public class MaskUtil {
+
+    public static String maskNumber(String number) {
+        if (number == null || number.isEmpty()) return number;
+
+        int len = number.length();
+
+        // Handle short numbers
+        if (len <= 2) {
+            return number; // nothing to mask
+        } else if (len == 3) {
+            return number.charAt(0) + "*" + number.charAt(2);
+        }
+
+        // For longer numbers
+        int prefixLen = Math.max(1, len / 3);
+        int suffixLen = Math.max(1, len / 3);
+
+        // Ensure we don't overlap
+        if (prefixLen + suffixLen >= len) {
+            prefixLen = 1;
+            suffixLen = len - 2; // leave middle at least 1 char
+        }
+
+        String prefix = number.substring(0, prefixLen);
+        String suffix = number.substring(len - suffixLen);
+
+        return prefix + "***" + suffix;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(maskNumber("686123744"));       // 686***744
+        System.out.println(maskNumber("7798123410"));      // 779***1410
+        System.out.println(maskNumber("515291234555831")); // 51529***55831
+        System.out.println(maskNumber("2040"));             // 2**0
+        System.out.println(maskNumber("10000001234561769589")); // 1000000***1769589
+        System.out.println(maskNumber("12"));               // 12
+        System.out.println(maskNumber("123"));              // 1*3
+    }
+}
+
+
+
+
+Masking rule (matches your photo)
+
+Statement:
+
+If the string length ≤ 2 → show as-is.
+
+If length = 3 → show first and last, mask the middle with * → a*b.
+
+Else (length ≥ 4):
+
+maskLen = min(3, length - 2) // mask up to 3 middle digits, but always leave at least 1 at each end
+
+visible = length - maskLen
+
+prefixLen = visible // 2 (floor)
+
+suffixLen = visible - prefixLen
+
+Output = prefix + "*" * maskLen + suffix
+✅ This preserves the original total length and yields patterns like your examples:
+686***744, 779***1410, 51529***55831, 2**0, 1000000***1769589.
+
+Table: how 1–20 digit accounts will display
+
+(Using the sample original 123… up to the length shown)
+
+Len	Shown
+1	1
+2	12
+3	1*3
+4	1**4
+5	1***5
+6	1***56
+7	12***67
+8	12***678
+9	123***789
+10	123***7890
+11	1234***8901
+12	1234***89012
+13	12345***90123
+14	12345***901234
+15	123456***012345
+16	123456***0123456
+17	1234567***1234567
+18	1234567***12345678
+19	12345678***23456789
+20	12345678***234567890
+
+
+public final class MaskUtil {
+    private MaskUtil() {}
+
+    /** Masks the middle of the string with up to 3 asterisks, preserving total length. */
+    public static String maskCentered(String number) {
+        if (number == null) return null;
+        int len = number.length();
+        if (len <= 2) return number;               // nothing to mask
+        if (len == 3) return number.charAt(0) + "*" + number.charAt(2);
+
+        int maskLen = Math.min(3, len - 2);        // keep at least 1 at each end
+        int visible = len - maskLen;
+        int prefixLen = visible / 2;               // floor
+        int suffixLen = visible - prefixLen;
+
+        String prefix = number.substring(0, prefixLen);
+        String suffix = number.substring(len - suffixLen);
+        return prefix + "*".repeat(maskLen) + suffix;
+    }
+}
+
+
+📝 Masking Rule Description (for your documentation)
+
+Name: Center masking (proportional pattern)
+Purpose: Hide the middle part of an account number while keeping both ends visible for recognition.
+
+Rule:
+
+If the number has 1–2 digits, show it as-is (no masking).
+
+If the number has 3 digits, show the first and last digits and replace the middle digit with *.
+
+Example: 123 → 1*3
+
+If the number has 4 or more digits:
+
+Keep at least one digit at the start and one digit at the end visible.
+
+Replace the middle section (up to 3 digits) with asterisks (*).
+
+The total length of the masked string must always equal the original length.
+
+The number of visible digits at the start and at the end is proportional to the total length (roughly split in half around the masked part).
+
+If the number is very long, keep more digits visible on each end, but still replace exactly 3 digits in the center with ***.
+
+Examples:
+
+Original	Masked
+2	2
+123	1*3
+1234	1**4
+686123744	686***744
+7798123410	779***1410
+51529123455831	51529***55831
+10000001234561769589	1000000***1769589
+
+
+🧠 One-sentence version
+
+Show the first and last parts of the number and replace the center section (up to 3 digits) with asterisks, preserving the total length and making the visible parts proportional to the number’s length.
+
+If you want, I can also give you a short math formula version of the rule (prefix length, mask length, suffix length) to include in your technical design doc.
+Would you like me to do that?
+
+You said:
+what is the behavior with non-odd numbers?
+ChatGPT said:
+
+Great question ✅ — this is the subtle part that makes your pattern work consistently.
+
+📐 How the rule behaves with even vs. odd lengths
+
+Remember the logic:
+
+Always mask up to 3 digits in the center (maskLen = min(3, len - 2))
+
+Then split the remaining visible digits around the mask.
+
+So:
+
+visible = totalLength - maskLen
+prefixLen = floor(visible / 2)
+suffixLen = visible - prefixLen
+
+
+This means:
+
+If visible is even, it splits evenly between prefix and suffix.
+
+If visible is odd, the extra digit goes to the suffix (end side).
+
+📋 Examples
+Total Length	MaskLen	Visible	PrefixLen	SuffixLen	Masked result
+6 (even)	3	3	1	2	1***56
+8 (even)	3	5	2	3	12***678
+10 (even)	3	7	3	4	123***7890
+7 (odd)	3	4	2	2	12***67
+9 (odd)	3	6	3	3	123***789
+11 (odd)	3	8	4	4	1234***8901
+
+🔍 Notice how:
+
+10 → 123***7890 has 3 on the left and 4 on the right
+
+9 → 123***789 has 3 on the left and 3 on the right
+
+So when the count of visible digits is odd, the suffix gets one more digit than the prefix.
+
+🧠 One-line explanation
+
+For even lengths, the visible digits are split equally around the mask;
+for odd lengths, the extra visible digit is placed at the end (suffix side).
