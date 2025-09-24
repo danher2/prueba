@@ -1,4 +1,4 @@
-
+see
 Yes, I fully understand what you’re trying to do — here’s your process in my own words so we’re aligned:
 
 ---
@@ -229,3 +229,65 @@ public class ProtegrityService {
         ProtegrityPayload invokeProtegrityService(ProtegrityPayload payload, String endpoint) throws ProtegrityException;
     }
 }
+
+
+Got it 👍 You want to rebase your branch on top of the updated master so you can bring in the latest changes. Here’s the step-by-step:
+
+1. Make sure you’re on your feature branch
+git checkout your-branch
+
+2. Update your local master
+
+Fetch the latest changes from remote:
+
+git fetch origin
+
+
+Then update local master:
+
+git checkout master
+git pull origin master
+
+3. Rebase your branch onto master
+
+Switch back to your branch:
+
+git checkout your-branch
+
+
+Now rebase:
+
+git rebase master
+
+4. Resolve conflicts (if any)
+
+If conflicts appear:
+
+Git will stop and tell you which files have conflicts.
+
+Open those files, fix conflicts manually.
+
+Mark them as resolved:
+
+git add <file>
+
+
+Then continue:
+
+git rebase --continue
+
+
+If you want to cancel the rebase:
+
+git rebase --abort
+
+5. Push changes
+
+If you already pushed your branch before rebasing, you’ll need to force push (since history is rewritten):
+
+git push origin your-branch --force
+
+
+✅ After this, your branch will sit on top of the latest master commit, no longer one commit behind.
+
+Do you want me to also show you how to do the same thing inside GitLab UI / MR page (using the “Rebase” button) or just stick with the CLI steps?
