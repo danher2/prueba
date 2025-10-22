@@ -854,3 +854,220 @@ public final class MaskUtil {
         return prefix + "*".repeat(maskLen) + suffix;
     }
 }
+
+
+
+
+__________________
+
+
+Perfect, Daniel — yes, I can help you break this JIRA feature into proper user stories so it’s easy for your team to track and implement.
+
+From the images you sent, the feature is about setting up and monitoring RAI (Request for Additional Information) letter generation in BEAM, and retiring duplicate process codes.
+
+Let’s translate this into structured JIRA-ready stories 👇
+
+
+---
+
+🧩 Feature Summary
+
+Feature Name: BEAM Monitoring Setup for Credit Card RAI Letters
+Feature Goal:
+Ensure RAI letter generation, delivery, and monitoring are configured correctly in BEAM, replacing old duplicate process codes, and setting up notifications and retry logic for publishing and delivery failures.
+
+
+---
+
+Epic: BEAM Monitoring Setup for RAI Letters
+
+> Parent task that groups all sub-stories for configuration, validation, and retirement.
+
+
+
+
+---
+
+Story 1: Update BEAM Process to Track RAI Letter Generation
+
+Description:
+Update BEAM process M1S3Z to track RAI letter generation and delivery from Hercules and ECT/Iris.
+
+Acceptance Criteria:
+
+[ ] Process is updated in BEAM Admin (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/M1S3Z)
+
+[ ] The process successfully receives and logs generation events from Hercules and ECT/Iris.
+
+[ ] The status for RAI letters is visible and traceable through BEAM monitoring.
+
+
+Notes:
+
+Reference: 130682_MT_CC_AAN_Mis_Info
+
+
+
+---
+
+Story 2: Configure Event Publishing and Retry Logic
+
+Description:
+Ensure BEAM publishes an event when an underwriter requests an RAI letter, and implement retry and failure notification logic.
+
+Acceptance Criteria:
+
+[ ] Event publishing triggers when RAI letter generation is requested.
+
+[ ] System retries up to 5 times in real-time if publishing fails.
+
+[ ] If all retries fail, an email is sent to:
+
+Anuradha.Krishnan1@usaa.com
+
+Connie.Moore@usaa.com
+
+USAA_BNK_AANRBPN_Team@usaa.com
+
+
+[ ] Email subject: CCO - RAI Event Not Published
+
+[ ] Message includes <TemplateId>, <ApplicationId>, and <mbr nbr> placeholders.
+
+[ ] Logs capture failed attempts and retry count.
+
+
+
+---
+
+Story 3: Notification for RAI Letter Not Generated
+
+Description:
+If an RAI letter is not generated within 24 hours, create a notification work item.
+
+Acceptance Criteria:
+
+[ ] System checks if the RAI letter was generated within 24 hours.
+
+[ ] If not, a Work Item (3NGHCRBO) is created.
+
+[ ] Description: Credit Card RAI Letter Not Generated.
+
+
+
+---
+
+Story 4: Notification for Documentum Save Failure
+
+Description:
+If an RAI letter is not saved to Documentum within 12 hours after generation, trigger a notification.
+
+Acceptance Criteria:
+
+[ ] System checks Documentum save status within 12 hours.
+
+[ ] If missing, a Work Item (3NGHCRBO) is created.
+
+[ ] Description: Credit Card RAI Letter Not in View Docs.
+
+
+
+---
+
+Story 5: Notification for UDO Post Failure
+
+Description:
+If an RAI letter fails to post to UDO within 12 hours after generation, trigger a notification.
+
+Acceptance Criteria:
+
+[ ] System checks UDO posting status within 12 hours.
+
+[ ] If missing, a Work Item (3NGHCRBO) is created.
+
+[ ] Description: Credit Card RAI Letter Failed post to UDO.
+
+
+
+---
+
+Story 6: Notification for Mail Preference Delivery Failure
+
+Description:
+If member preference is mail and RAI letter is not mailed within 6 days after generation, trigger a notification.
+
+Acceptance Criteria:
+
+[ ] System checks mailing confirmation status.
+
+[ ] If missing, a Work Item (3NGHCRBO) is created.
+
+[ ] Description: Credit Card RAI Letter Not Confirmed Sent by RRD.
+
+
+
+---
+
+Story 7: Retire Duplicate BEAM Process Codes
+
+Description:
+Retire the duplicate RAI generation BEAM process codes that are no longer in use.
+
+Acceptance Criteria:
+
+[ ] Deactivate OYHRR (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/OYHRR)
+
+Confirmed that Email and Work Item notifications were deactivated in June 2020.
+
+Ensure process code status changes from ACTIVE to INACTIVE.
+
+
+[ ] Deactivate ONA7O (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/ONA7O)
+
+Confirm monitor is same as M1S3Z.
+
+
+[ ] Update documentation to reflect deactivation.
+
+
+
+---
+
+Story 8: Validate Reference BEAM Code and Migration Compatibility
+
+Description:
+Validate that the CL BEAM process code ZKGZC is used for SLOs and confirm backward compatibility of ICE and ECT events.
+
+Acceptance Criteria:
+
+[ ] Verify ZKGZC configuration (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/ZKGZC).
+
+[ ] Confirm ICE events are backward compatible with ECT events.
+
+[ ] Reference BEAM wiki:
+
+BKCL Page
+
+Migration Guidance
+
+
+
+
+---
+
+✅ Completion Criteria for the Epic
+
+BEAM monitoring for Credit Card RAI letters is active and stable.
+
+Duplicate process codes are retired and confirmed inactive.
+
+All RAI generation, delivery, and failure scenarios produce correct notifications and work items.
+
+Documentation and BEAM wiki are updated accordingly.
+
+
+
+---
+
+Would you like me to generate a ready-to-import JIRA CSV or Markdown table for these stories (with fields like Summary, Description, Acceptance Criteria, and Story Points placeholders)?
+That way you can upload it directly into JIRA.
