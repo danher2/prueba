@@ -1,4 +1,4 @@
-Based on the image you've uploaded of your Go project repository, here's a list of the files and directories along with their typical purpose:
+whyBased on the image you've uploaded of your Go project repository, here's a list of the files and directories along with their typical purpose:
 
 ci-scripts - This directory likely contains scripts used in continuous integration processes, helping automate tasks like testing, building, and deploying the application.
 src - This directory holds the source code files for the project. It's where most of the application logic and Go files will be stored.
@@ -42,4 +42,58 @@ func FetchSecretCache(secretName string) (string, error) {
 
     // Return the secret value
     return *out.SecretString, nil
+}
+
+
+
+
+import (
+    "context"
+    "errors"
+    "fmt"
+    "sync"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+)
+
+var secretCache = struct {
+    sync.RWMutex
+    data map[string]string
+}{data: make(map[string]string)}
+
+func FetchSecretWithCache(secretName string) (string, error) {
+    // Check the cache first
+    secretCache.RLock()
+    if value, found := secretCache.data[secretName]; found {
+        secretCache.RUnlock()
+        fmt.Println("Retrieved secret from cache")
+        return value, nil
+    }
+    secretCache.RUnlock()
+
+    // If not in cache, fetch from AWS Secrets Manager
+    cfg, err := config.LoadDefaultConfig(context.Background())
+    if err != nil {
+        return "", err
+    }
+
+    client := secretsmanager.NewFromConfig(cfg)
+    output, err := client.GetSecretValue(context.Background(), &secretsmanager.GetSecretValueInput{
+        SecretId: &secretName,
+    })
+    if err != nil {
+        return "", err
+    }
+
+    secretValue := *output.SecretString
+
+    // Log that we retrieved from Secrets Manager
+    fmt.Println("Retrieved secret from AWS Secrets Manager")
+
+    // Store the fetched secret in the cache
+    secretCache.Lock()
+    secretCache.data[secretName] = secretValue
+    secretCache.Unlock()
+
+    return secretValue, nil
 }
