@@ -15,3 +15,31 @@ local-build.sh - A shell script typically used to execute local builds of the pr
 main.go - The main entry point for the Go application. This file usually contains the main function that kicks off the execution of the application.
 usaa_cert_chain.cert - A certificate file, potentially used to establish secure connections or authenticate against services, containing a chain of certificates for a security credential.
 These files and directories form the foundation of a typical Go project structured for development with integration into CI/CD pipelines and possibly prepared for secure deployments and package management. If you need more details on any specific file or setup, feel free to ask!
+
+
+
+func FetchSecretCache(secretName string) (string, error) {
+    // Load AWS config (region & credentials come from env / profile / role)
+    cfg, err := config.LoadDefaultConfig(context.Background())
+    if err != nil {
+        return "", fmt.Errorf("error loading AWS config: %w", err)
+    }
+
+    // Create Secrets Manager client
+    client := secretsmanager.NewFromConfig(cfg)
+
+    // Call Secrets Manager
+    out, err := client.GetSecretValue(context.Background(), &secretsmanager.GetSecretValueInput{
+        SecretId: &secretName,
+    })
+    if err != nil {
+        return "", fmt.Errorf("error getting secret %s: %w", secretName, err)
+    }
+
+    if out.SecretString == nil {
+        return "", fmt.Errorf("secret %s has no SecretString", secretName)
+    }
+
+    // Return the secret value
+    return *out.SecretString, nil
+}
