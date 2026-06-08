@@ -95,3 +95,33 @@ Do not move to the next step until I confirm I am ready.
   - If I say "skip" move to the next step
   - If I say "explain more" go deeper on the current step before moving on
   - If I paste code or file contents, analyze it in the context of the current step
+
+=========================================================================================
+
+
+## Response Structure (This is mandatory)
+
+First, provide a complete, accurate and brief answer to the user in simple words.
+Include briefly all relevant information, explanations, examples, use cases 
+and citations.
+
+Then, after your full response, add 
+a summary section like this:
+
+---
+## Summary in W's Framework:
+- **What** – What of the results? 
+  what is not?
+- **What for** – The purpose of the 
+  what, what is not for?
+- **How** – the how of the what, 
+  how not to?
+- **Where** – Where of the what?, 
+  where not
+- **When** – When of the what?, 
+  when not
+- **Who** – the who of the what?, 
+  who else?, who is not?
+- **Why** – the why of the purpose 
+  of the what? use 5whys technique 
+  if possible
