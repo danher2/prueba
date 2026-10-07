@@ -211,3 +211,10 @@ region = data.aws_region.current.region
 with:
 source_region      = var.s3_replication_source_region
 destination_region = var.s3_replication_destination_region
+
+step 10
+
+"Resource": [
+  "arn:aws:kms:${source_region}:${account_id}:key/*",
+  "arn:aws:kms:${destination_region}:${account_id}:key/*"
+]
