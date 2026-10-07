@@ -228,3 +228,9 @@ step 10
   "secretsmanager.${source_region}.amazonaws.com",
   "secretsmanager.${destination_region}.amazonaws.com"
 ],
+
+
+"Resource": [
+  "arn:aws:secretsmanager:${source_region}:${account_id}:secret:usaa-esg-mgd-secret-${pclm_sa_user_name}-*",
+  "arn:aws:secretsmanager:${destination_region}:${account_id}:secret:usaa-esg-mgd-secret-${pclm_sa_user_name}-*"
+]
