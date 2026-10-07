@@ -1,4 +1,4 @@
-Yes. Based on everything we've traced, the next step should be to create one common reference for the Lambda execution role. I would do this before touching the policy template.
+weYes. Based on everything we've traced, the next step should be to create one common reference for the Lambda execution role. I would do this before touching the policy template.
 
 1. Stop making the IAM role name regional
 
@@ -183,4 +183,19 @@ resource "aws_iam_role_policy_attachment" "usaa_mandatory_lambda" {
 
   role       = aws_iam_role.lambda_execution_role[0].name
   policy_arn = aws_iam_policy.usaa_mandatory_lambda_policy.arn
+}
+
+
+resource "aws_iam_policy" "usaa_mandatory_lambda_policy" {
+  # Create and manage the shared Lambda policy only in the primary region.
+  count = local.is_primary ? 1 : 0
+
+  name        = local.iam_policy_name_final
+  path        = "/delegated/${data.usaatags_resource_tags.tags.application_id}/"
+  description = "USAA mandatory policy for Lambdas"
+  tags        = data.usaatags_resource_tags.tags.tags
+
+  policy = templatefile(local.usaa_mandatory_lambda_policy, {
+    # existing values...
+  })
 }
