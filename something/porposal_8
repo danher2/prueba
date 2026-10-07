@@ -176,3 +176,11 @@ When – Do this before deleting the existing -w2 role, and don't apply yet beca
 Who – East Terraform owns the shared role; West Terraform consumes it; Lambdas and KMS in both regions reference it.
 
 Why – IAM roles are global → a separate West execution role is unnecessary → but West still needs an execution-role ARN → therefore West should reference the shared role rather than create another one → both regions can then authorize the same role against their regional resources.
+
+resource "aws_iam_role_policy_attachment" "usaa_mandatory_lambda" {
+  # Attach the policy only in the primary region where the shared IAM role is managed.
+  count = local.is_primary ? 1 : 0
+
+  role       = aws_iam_role.lambda_execution_role[0].name
+  policy_arn = aws_iam_policy.usaa_mandatory_lambda_policy.arn
+}
