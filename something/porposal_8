@@ -218,3 +218,13 @@ step 10
   "arn:aws:kms:${source_region}:${account_id}:key/*",
   "arn:aws:kms:${destination_region}:${account_id}:key/*"
 ]
+
+"Resource": [
+  "arn:aws:kms:${source_region}:${account_id}:key/*",
+  "arn:aws:kms:${destination_region}:${account_id}:key/*"
+],
+
+"kms:ViaService": [
+  "secretsmanager.${source_region}.amazonaws.com",
+  "secretsmanager.${destination_region}.amazonaws.com"
+],
