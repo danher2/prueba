@@ -1,1073 +1,178 @@
-shell
+Yes. Based on everything we've traced, the next step should be to create one common reference for the Lambda execution role. I would do this before touching the policy template.
 
-TABLE="test"
-LOG="expiration_update_log.csv"
-EXP_DAYS=60
+1. Stop making the IAM role name regional
 
-# Compute expiration epoch (UTC now + EXP_DAYS days)
-EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
+In main.tf, you currently have something equivalent to:
 
-# Initialize CSV log
-echo "ID,ACCOUNTNUMBER,Status" > "$LOG"
-
-NEXT_TOKEN=""
-UPDATED=0
-
-while :; do
-  # 1) Scan for items missing 'expiration', output ID & ACCOUNT as text:
-  if [[ -n "$NEXT_TOKEN" ]]; then
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration)" \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text \
-      --starting-token "$NEXT_TOKEN")
-  else
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration)" \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text)
-  fi
-
-  # If there’s nothing to update, inform and break
-  if [[ -z "$RAW_LIST" ]]; then
-    echo "No items found without an expiration—nothing to update."
-    break
-  fi
-
-  # 2) Process each line (ID<TAB>ACCOUNTNUMBER)
-  while read -r ID ACC; do
-	ID=$(echo "$ID" | tr -d '\r\n[:space:]')
-    ACC=$(echo "$ACC" | tr -d '\r\n[:space:]')
-  
-    aws dynamodb update-item \
-      --table-name "$TABLE" \
-      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
-      --update-expression "SET expiration = :exp" \
-      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
-      --return-values NONE
-
-    echo "$ID,$ACC,Updated" >> "$LOG"
-    ((UPDATED++))
-  done <<< "$RAW_LIST"
-
-  # 3) Get NextToken for pagination (AWS CLI v2)
-  NEXT_TOKEN=$(aws dynamodb scan \
-    --table-name "$TABLE" \
-    --filter-expression "attribute_not_exists(expiration)" \
-    --projection-expression "ID" \
-    --query "NextToken" \
-    --output text)
-
-  # AWS CLI outputs “None” or blank when there is no next token
-  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
-done
-
-# Only show the summary if we actually updated something
-if (( UPDATED > 0 )); then
-  echo
-  echo "Update complete. $UPDATED records updated. See $LOG."
-fi
-
-===================================================================================================================
-
-BAT
-
-@echo off
-setlocal enabledelayedexpansion
-
-rem ── Configuration ─────────────
-set "TABLE=test"
-set "LOG=expiration_update_log.csv"
-set /a EXP_DAYS=60
-
-rem ── Compute expiration epoch (UTC now + EXP_DAYS)
-for /f %%T in ('powershell -NoProfile -Command ^
-  "(Get-Date).AddDays(%EXP_DAYS%).ToUniversalTime().Subtract([datetime]'1970-01-01').TotalSeconds|ForEach-Object {[int]$_}"') do (
-  set "EXPIRATION=%%T"
+iam_role_name = format(
+  "%s-role%s",
+  local.resource_default_name_env[local.env],
+  local.resource_name_postfix
 )
 
-rem ── Initialize CSV log
-echo ID,ACCOUNTNUMBER,Status > "%LOG%"
+Change only the IAM role name so it doesn't use resource_name_postfix:
 
-rem ── Paging setup
-set "NEXT_TOKEN="
-set /a UPDATED=0
+iam_role_name = format(
+  "%s-role",
+  local.resource_default_name_env[local.env]
+)
 
-:PAGE_LOOP
-  rem 1) Scan, filtering out items that already have 'expiration'
-  if defined NEXT_TOKEN (
-    set "SCAN_OPTS=--starting-token %NEXT_TOKEN%"
-  ) else (
-    set "SCAN_OPTS="
-  )
+Do not remove resource_name_postfix itself. KMS, S3, Lambda names, etc. can continue using -w2.
 
-  for /f "tokens=1,2" %%A in ('aws dynamodb scan --table-name %TABLE% ^
-      --filter-expression "attribute_not_exists(expiration)" ^
-      --projection-expression "ID,ACCOUNTNUMBER" ^
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" ^
-      --output text %SCAN_OPTS%') do (
-      
-      set "ID=%%A"
-      set "ACC=%%B"
+This means both regional deployments now agree on the name of the global role.
 
-      rem 2) Update expiration
-      aws dynamodb update-item ^
-        --table-name %TABLE% ^
-        --key "{\"ID\":{\"S\":\"!ID!\"},\"ACCOUNTNUMBER\":{\"S\":\"!ACC!\"}}" ^
-        --update-expression "SET expiration = :exp" ^
-        --expression-attribute-values "{\":exp\":{\"N\":\"%EXPIRATION%\"}}" ^
-        --return-values NONE
+2. Make only East create/manage that role
 
-      echo !ID!,!ACC!,Updated>>"%LOG%"
-      set /a UPDATED+=1
-  )
+In iam.tf, your current resource is roughly:
 
-  rem 3) Get the NextToken for pagination (AWS CLI v2)
-  for /f %%T in ('aws dynamodb scan --table-name %TABLE% ^
-      --filter-expression "attribute_not_exists(expiration)" ^
-      --projection-expression "ID" ^
-      --query "NextToken" ^
-      --output text') do set "NEXT_TOKEN=%%T"
-
-  if "%NEXT_TOKEN%"=="None" set "NEXT_TOKEN="
-  if defined NEXT_TOKEN goto PAGE_LOOP
-
-:END
-echo.
-echo Update complete. %UPDATED% records updated. See %LOG%.
-endlocal
-
-
-================================================================
-sh
-
-#!/usr/bin/env bash
-set -euo pipefail
-
-# ── Configuration ─────────────
-TABLE="test"
-LOG="expiration_update_log.csv"
-EXP_DAYS=60
-
-# NEW: set the values you want to filter on
-BATCH_ID="yourBatchIdValue"
-PCLM_TYPE="yourPclmTypeValue"
-
-# Compute expiration epoch (UTC now + EXP_DAYS days)
-EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
-
-# Initialize CSV log
-echo "ID,ACCOUNTNUMBER,Status" > "$LOG"
-
-NEXT_TOKEN=""
-UPDATED=0
-
-while :; do
-  # 1) Scan for items missing 'expiration' AND matching batchID & PCLMType
-  if [[ -n "$NEXT_TOKEN" ]]; then
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text \
-      --starting-token "$NEXT_TOKEN")
-  else
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text)
-  fi
-
-  # If there’s nothing to update, inform and break
-  if [[ -z "$RAW_LIST" ]]; then
-    echo "No items found without an expiration—nothing to update."
-    break
-  fi
-
-  # 2) Process each line (ID<TAB>ACCOUNTNUMBER)
-  while read -r ID ACC; do
-    ID=$(echo "$ID" | tr -d '\r\n[:space:]')
-    ACC=$(echo "$ACC" | tr -d '\r\n[:space:]')
-
-    aws dynamodb update-item \
-      --table-name "$TABLE" \
-      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
-      --update-expression "SET expiration = :exp" \
-      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
-      --return-values NONE
-
-    echo "$ID,$ACC,Updated" >> "$LOG"
-    ((UPDATED++))
-  done <<< "$RAW_LIST"
-
-  # 3) Get NextToken for pagination (AWS CLI v2), with the same filter
-  NEXT_TOKEN=$(aws dynamodb scan \
-    --table-name "$TABLE" \
-    --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-    --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-    --projection-expression "ID" \
-    --query "NextToken" \
-    --output text)
-
-  # AWS CLI outputs “None” or blank when there is no next token
-  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
-done
-
-# Only show the summary if we actually updated something
-if (( UPDATED > 0 )); then
-  echo
-  echo "Update complete. $UPDATED records updated. See $LOG."
-fi
-=======================================================================================
-
-#!/usr/bin/env bash
-set -euo pipefail
-
-# ── Configuration ─────────────
-TABLE="test"
-LOG="expiration_update_log.csv"
-EXP_DAYS=60
-
-# NEW: values to filter by
-BATCH_ID="yourBatchIdValue"
-PCLM_TYPE="yourPclmTypeValue"
-
-# Compute expiration epoch (UTC now + EXP_DAYS days)
-EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
-
-# Initialize CSV log
-echo "ID,ACCOUNTNUMBER,Status" > "$LOG"
-
-NEXT_TOKEN=""
-UPDATED=0
-PAGE=0
-
-while :; do
-  # ── Page counter & message ─────────────
-  PAGE=$((PAGE+1))
-  echo "▶ Scanning page $PAGE..."
-
-  # 1) Scan for items missing 'expiration' and matching BatchID & PCLMType:
-  if [[ -n "$NEXT_TOKEN" ]]; then
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text \
-      --starting-token "$NEXT_TOKEN")
-  else
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text)
-  fi
-
-  # If there’s nothing to update, inform and break
-  if [[ -z "$RAW_LIST" ]]; then
-    echo "No items found without an expiration—nothing to update."
-    break
-  fi
-
-  # 2) Process each line (ID<TAB>ACCOUNTNUMBER)
-  while read -r ID ACC; do
-    ID=${ID//$'\r'/}
-    ACC=${ACC//$'\r'/}
-
-    aws dynamodb update-item \
-      --table-name "$TABLE" \
-      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
-      --update-expression "SET expiration = :exp" \
-      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
-      --return-values NONE
-
-    echo "$ID,$ACC,Updated" >> "$LOG"
-    ((UPDATED++))
-  done <<< "$RAW_LIST"
-
-  # 3) Get NextToken for pagination (AWS CLI v2), with same filter
-  NEXT_TOKEN=$(aws dynamodb scan \
-    --table-name "$TABLE" \
-    --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-    --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-    --projection-expression "ID" \
-    --query "NextToken" \
-    --output text)
-
-  # AWS CLI outputs “None” or blank when there is no next token
-  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
-done
-
-# Only show the summary if we actually updated something
-if (( UPDATED > 0 )); then
-  echo
-  echo "Processed $PAGE pages, updated $UPDATED records. See $LOG."
-fi
-=========================================================================================
-#!/usr/bin/env bash
-set -euo pipefail
-
-# ── Configuration ─────────────
-TABLE="test"
-LOG="expiration_update_log.csv"
-EXP_DAYS=60
-
-# Filter values
-BATCH_ID="yourBatchIdValue"
-PCLM_TYPE="yourPclmTypeValue"
-
-# Compute expiration epoch (UTC now + EXP_DAYS days)
-EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
-
-# Initialize CSV log
-echo "ID,ACCOUNTNUMBER,Status" > "$LOG"
-
-NEXT_TOKEN=""
-UPDATED=0
-PAGE=0
-
-while :; do
-  # Increment page counter and show progress
-  PAGE=$((PAGE+1))
-  echo "▶ Scanning page $PAGE..."
-
-  # 1) Scan for items missing 'expiration' and matching batchID & PCLMType
-  if [[ -n "$NEXT_TOKEN" ]]; then
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text \
-      --starting-token "$NEXT_TOKEN")
-  else
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text)
-  fi
-
-  # If there’s nothing to update, inform and break
-  if [[ -z "$RAW_LIST" ]]; then
-    echo "No items found without an expiration—nothing to update."
-    break
-  fi
-
-  # 2) Process each line (ID<TAB>ACCOUNTNUMBER), update and log
-  while read -r ID ACC; do
-    # Strip any stray carriage returns
-    ID=${ID//$'\r'/}
-    ACC=${ACC//$'\r'/}
-
-    aws dynamodb update-item \
-      --table-name "$TABLE" \
-      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
-      --update-expression "SET expiration = :exp" \
-      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
-      --return-values NONE
-
-    echo "$ID,$ACC,Updated" >> "$LOG"
-    ((UPDATED++))
-    # Live counter on the same line
-    printf '\rRecords processed: %d' "$UPDATED"
-  done <<< "$RAW_LIST"
-  printf '\n'
-
-  # 3) Get NextToken for pagination, with same filter
-  NEXT_TOKEN=$(aws dynamodb scan \
-    --table-name "$TABLE" \
-    --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-    --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-    --projection-expression "ID" \
-    --query "NextToken" \
-    --output text)
-
-  # Break if no more pages
-  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
-done
-
-# Final summary
-if (( UPDATED > 0 )); then
-  echo
-  echo "Processed $PAGE pages, updated $UPDATED records. See $LOG."
-fi
-
-
-=======================================================================================
-
-#!/usr/bin/env bash
-set -euo pipefail
-
-# ── Configuration ─────────────
-TABLE="test"
-EXP_DAYS=60
-PAGE_SIZE=1000              # max items to fetch per Scan “page”
-
-# Filter values
-BATCH_ID="yourBatchIdValue"
-PCLM_TYPE="yourPclmTypeValue"
-
-# Compute expiration epoch (UTC now + EXP_DAYS days)
-EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
-
-NEXT_TOKEN=""
-UPDATED=0
-PAGE=0
-
-while :; do
-  # ── Page counter & message ─────────────
-  PAGE=$((PAGE+1))
-  echo "▶ Scanning page $PAGE..."
-
-  # 1) Scan for up to $PAGE_SIZE items missing 'expiration' & matching filters
-  if [[ -n "$NEXT_TOKEN" ]]; then
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --limit "$PAGE_SIZE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text \
-      --starting-token "$NEXT_TOKEN")
-  else
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --limit "$PAGE_SIZE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text)
-  fi
-
-  # If there’s nothing to update on this page, exit
-  if [[ -z "$RAW_LIST" ]]; then
-    echo "No items found without an expiration—nothing to update."
-    break
-  fi
-
-  # 2) Update each record, track live count
-  while read -r ID ACC; do
-    ID=${ID//$'\r'/}
-    ACC=${ACC//$'\r'/}
-
-    aws dynamodb update-item \
-      --table-name "$TABLE" \
-      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
-      --update-expression "SET expiration = :exp" \
-      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
-      --return-values NONE
-
-    ((UPDATED++))
-    printf '\rRecords processed: %d' "$UPDATED"
-  done <<< "$RAW_LIST"
-  printf '\n'
-
-  # 3) Get NextToken for the next page (same filters & limit)
-  NEXT_TOKEN=$(aws dynamodb scan \
-    --table-name "$TABLE" \
-      --limit "$PAGE_SIZE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID" \
-      --query "NextToken" \
-      --output text)
-
-  # If no more pages remain, stop
-  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
-done
-
-# Final summary
-if (( UPDATED > 0 )); then
-  echo
-  echo "Processed $PAGE pages, updated $UPDATED records."
-fi
-========================================================================================
-
-#!/usr/bin/env bash
-set -euo pipefail
-
-# ── Configuration ─────────────
-TABLE="test"
-EXP_DAYS=60
-PAGE_SIZE=1000              # max items to fetch per Scan “page”
-
-# Filter values
-BATCH_ID="yourBatchIdValue"
-PCLM_TYPE="yourPclmTypeValue"
-
-# Computes the expiration timestamp (UTC now + EXP_DAYS days)
-EXPIRATION=$(date -u -d "+${EXP_DAYS} days" +%s)
-
-# Tracks when we last refreshed credentials
-LAST_REFRESH=0
-
-# Function to refresh AWS STS session credentials (valid 1h)
-refresh_credentials() {
-  echo "⟳ Refreshing AWS session token…"
-  # Fetch new temporary credentials and split them into three vars
-  read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
-    $(aws sts get-session-token \
-         --duration-seconds 3600 \
-         --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-         --output text)
-  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-  LAST_REFRESH=$(date +%s)
+resource "aws_iam_role" "lambda_execution_role" {
+  name = local.iam_role_name_final
+  ...
 }
 
-# Prime the initial session
-refresh_credentials
+Change it to:
 
-NEXT_TOKEN=""
-UPDATED=0
-PAGE=0
+resource "aws_iam_role" "lambda_execution_role" {
+  count = local.is_primary ? 1 : 0
 
-while :; do
-  # If it's been almost an hour, refresh before the next scan
-  NOW=$(date +%s)
-  if (( NOW - LAST_REFRESH > 3500 )); then
-    refresh_credentials
-  fi
+  name = local.iam_role_name_final
 
-  # Page counter & progress message
-  PAGE=$((PAGE+1))
-  echo "▶ Scanning page $PAGE..."
-
-  # 1) Scan up to $PAGE_SIZE items missing 'expiration' & matching filters
-  if [[ -n "$NEXT_TOKEN" ]]; then
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --limit "$PAGE_SIZE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text \
-      --starting-token "$NEXT_TOKEN")
-  else
-    RAW_LIST=$(aws dynamodb scan \
-      --table-name "$TABLE" \
-      --limit "$PAGE_SIZE" \
-      --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-      --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-      --projection-expression "ID,ACCOUNTNUMBER" \
-      --query "Items[*].[ID.S,ACCOUNTNUMBER.S]" \
-      --output text)
-  fi
-
-  # If no items on this page, we're done
-  if [[ -z "$RAW_LIST" ]]; then
-    echo "No items found without an expiration—nothing to update."
-    break
-  fi
-
-  # 2) Update each item, show live counter
-  while read -r ID ACC; do
-    # strip stray carriage returns
-    ID=${ID//$'\r'/}
-    ACC=${ACC//$'\r'/}
-
-    aws dynamodb update-item \
-      --table-name "$TABLE" \
-      --key "{\"ID\":{\"S\":\"$ID\"},\"ACCOUNTNUMBER\":{\"S\":\"$ACC\"}}" \
-      --update-expression "SET expiration = :exp" \
-      --expression-attribute-values "{\":exp\":{\"N\":\"$EXPIRATION\"}}" \
-      --return-values NONE
-
-    ((UPDATED++))
-    printf '\rRecords processed: %d' "$UPDATED"
-  done <<< "$RAW_LIST"
-  printf '\n'
-
-  # 3) Fetch NextToken (same filters & limit)
-  NEXT_TOKEN=$(aws dynamodb scan \
-    --table-name "$TABLE" \
-    --limit "$PAGE_SIZE" \
-    --filter-expression "attribute_not_exists(expiration) AND batchID = :batchID AND PCLMType = :pclmType" \
-    --expression-attribute-values '{":batchID":{"S":"'"$BATCH_ID"'"},":pclmType":{"S":"'"$PCLM_TYPE"'"}}' \
-    --projection-expression "ID" \
-    --query "NextToken" \
-    --output text)
-
-  # If no more pages remain, exit
-  [[ "$NEXT_TOKEN" == "None" || -z "$NEXT_TOKEN" ]] && break
-done
-
-# Final summary
-if (( UPDATED > 0 )); then
-  echo
-  echo "Processed $PAGE pages, updated $UPDATED records."
-fi
-
-
-==========================
-
-public class MaskUtil {
-
-    public static String maskNumber(String number) {
-        if (number == null || number.isEmpty()) return number;
-
-        int len = number.length();
-
-        // Handle short numbers
-        if (len <= 2) {
-            return number; // nothing to mask
-        } else if (len == 3) {
-            return number.charAt(0) + "*" + number.charAt(2);
-        }
-
-        // For longer numbers
-        int prefixLen = Math.max(1, len / 3);
-        int suffixLen = Math.max(1, len / 3);
-
-        // Ensure we don't overlap
-        if (prefixLen + suffixLen >= len) {
-            prefixLen = 1;
-            suffixLen = len - 2; // leave middle at least 1 char
-        }
-
-        String prefix = number.substring(0, prefixLen);
-        String suffix = number.substring(len - suffixLen);
-
-        return prefix + "***" + suffix;
-    }
-
-    public static void main(String[] args) {
-        System.out.println(maskNumber("686123744"));       // 686***744
-        System.out.println(maskNumber("7798123410"));      // 779***1410
-        System.out.println(maskNumber("515291234555831")); // 51529***55831
-        System.out.println(maskNumber("2040"));             // 2**0
-        System.out.println(maskNumber("10000001234561769589")); // 1000000***1769589
-        System.out.println(maskNumber("12"));               // 12
-        System.out.println(maskNumber("123"));              // 1*3
-    }
+  # Keep the rest of your existing configuration unchanged.
 }
 
+Since you already defined:
 
+is_primary = local.region == "us-east-1"
 
+the behavior becomes:
 
-Masking rule (matches your photo)
+us-east-1 → count = 1 → create/manage role
+us-west-2 → count = 0 → DON'T create another role
 
-Statement:
+3. In West, look up the existing role
 
-If the string length ≤ 2 → show as-is.
+Still in iam.tf, add:
 
-If length = 3 → show first and last, mask the middle with * → a*b.
+data "aws_iam_role" "lambda_execution_role" {
+  count = local.is_primary ? 0 : 1
 
-Else (length ≥ 4):
-
-maskLen = min(3, length - 2) // mask up to 3 middle digits, but always leave at least 1 at each end
-
-visible = length - maskLen
-
-prefixLen = visible // 2 (floor)
-
-suffixLen = visible - prefixLen
-
-Output = prefix + "*" * maskLen + suffix
-✅ This preserves the original total length and yields patterns like your examples:
-686***744, 779***1410, 51529***55831, 2**0, 1000000***1769589.
-
-Table: how 1–20 digit accounts will display
-
-(Using the sample original 123… up to the length shown)
-
-Len	Shown
-1	1
-2	12
-3	1*3
-4	1**4
-5	1***5
-6	1***56
-7	12***67
-8	12***678
-9	123***789
-10	123***7890
-11	1234***8901
-12	1234***89012
-13	12345***90123
-14	12345***901234
-15	123456***012345
-16	123456***0123456
-17	1234567***1234567
-18	1234567***12345678
-19	12345678***23456789
-20	12345678***234567890
-
-
-public final class MaskUtil {
-    private MaskUtil() {}
-
-    /** Masks the middle of the string with up to 3 asterisks, preserving total length. */
-    public static String maskCentered(String number) {
-        if (number == null) return null;
-        int len = number.length();
-        if (len <= 2) return number;               // nothing to mask
-        if (len == 3) return number.charAt(0) + "*" + number.charAt(2);
-
-        int maskLen = Math.min(3, len - 2);        // keep at least 1 at each end
-        int visible = len - maskLen;
-        int prefixLen = visible / 2;               // floor
-        int suffixLen = visible - prefixLen;
-
-        String prefix = number.substring(0, prefixLen);
-        String suffix = number.substring(len - suffixLen);
-        return prefix + "*".repeat(maskLen) + suffix;
-    }
+  name = local.iam_role_name_final
 }
 
+Now:
 
-📝 Masking Rule Description (for your documentation)
+East
+  → aws_iam_role.lambda_execution_role[0]
 
-Name: Center masking (proportional pattern)
-Purpose: Hide the middle part of an account number while keeping both ends visible for recognition.
+West
+  → data.aws_iam_role.lambda_execution_role[0]
 
-Rule:
+4. Create one ARN that everybody uses
 
-If the number has 1–2 digits, show it as-is (no masking).
+Add a local, preferably close to your other IAM locals:
 
-If the number has 3 digits, show the first and last digits and replace the middle digit with *.
+lambda_execution_role_arn = local.is_primary
+  ? aws_iam_role.lambda_execution_role[0].arn
+  : data.aws_iam_role.lambda_execution_role[0].arn
 
-Example: 123 → 1*3
+I would also create the name because your IAM attachment currently uses the role name:
 
-If the number has 4 or more digits:
+lambda_execution_role_name = local.is_primary
+  ? aws_iam_role.lambda_execution_role[0].name
+  : data.aws_iam_role.lambda_execution_role[0].name
 
-Keep at least one digit at the start and one digit at the end visible.
+Now the rest of the project doesn't need to know who created the role.
 
-Replace the middle section (up to 3 digits) with asterisks (*).
+5. Replace the Lambda references
 
-The total length of the masked string must always equal the original length.
+Your screenshots show things like:
 
-The number of visible digits at the start and at the end is proportional to the total length (roughly split in half around the masked part).
+use_existing_iam_role = true
 
-If the number is very long, keep more digits visible on each end, but still replace exactly 3 digits in the center with ***.
+existing_iam_role_arn =
+  aws_iam_role.lambda_execution_role.arn
 
-Examples:
+For example in updateCreditLimit_lambda.tf and account_validator_lambda.tf.
 
-Original	Masked
-2	2
-123	1*3
-1234	1**4
-686123744	686***744
-7798123410	779***1410
-51529123455831	51529***55831
-10000001234561769589	1000000***1769589
+Change those to:
 
+existing_iam_role_arn = local.lambda_execution_role_arn
 
-🧠 One-sentence version
+Do that for every occurrence of:
 
-Show the first and last parts of the number and replace the center section (up to 3 digits) with asterisks, preserving the total length and making the visible parts proportional to the number’s length.
+aws_iam_role.lambda_execution_role.arn
 
-If you want, I can also give you a short math formula version of the rule (prefix length, mask length, suffix length) to include in your technical design doc.
-Would you like me to do that?
+where the code simply needs the execution role ARN.
 
-You said:
-what is the behavior with non-odd numbers?
-ChatGPT said:
+6. Do the same in kms.tf
 
-Great question ✅ — this is the subtle part that makes your pattern work consistently.
+You showed:
 
-📐 How the rule behaves with even vs. odd lengths
+(aws_iam_role.lambda_execution_role.arn) = "ED",
 
-Remember the logic:
+Change that to:
 
-Always mask up to 3 digits in the center (maskLen = min(3, len - 2))
+(local.lambda_execution_role_arn) = "ED",
 
-Then split the remaining visible digits around the mask.
+That's actually a nice result.
 
-So:
+During East deployment:
 
-visible = totalLength - maskLen
-prefixLen = floor(visible / 2)
-suffixLen = visible - prefixLen
+East KMS key
+    ↑
+shared IAM role
 
+During West deployment:
 
-This means:
+West KMS key
+    ↑
+same shared IAM role
 
-If visible is even, it splits evenly between prefix and suffix.
+Exactly what we want.
 
-If visible is odd, the extra digit goes to the suffix (end side).
+But stop there before running Terraform
 
-📋 Examples
-Total Length	MaskLen	Visible	PrefixLen	SuffixLen	Masked result
-6 (even)	3	3	1	2	1***56
-8 (even)	3	5	2	3	12***678
-10 (even)	3	7	3	4	123***7890
-7 (odd)	3	4	2	2	12***67
-9 (odd)	3	6	3	3	123***789
-11 (odd)	3	8	4	4	1234***8901
+There's an important second phase.
 
-🔍 Notice how:
+We haven't solved the shared IAM policy yet.
 
-10 → 123***7890 has 3 on the left and 4 on the right
+Your existing:
 
-9 → 123***789 has 3 on the left and 3 on the right
+resource "aws_iam_policy" "usaa_mandatory_lambda_policy"
 
-So when the count of visible digits is odd, the suffix gets one more digit than the prefix.
+is also regionally named, and its template receives:
 
-🧠 One-line explanation
+region = data.aws_region.current.region
 
-For even lengths, the visible digits are split equally around the mask;
-for odd lengths, the extra visible digit is placed at the end (suffix side).
+along with regional KMS/S3/Secrets Manager ARNs.
 
+So after the role consolidation, we have to decide how one shared role receives the required permissions for both regions.
 
+Also, because aws_iam_role.lambda_execution_role now uses count, references inside iam.tf such as:
 
-Center masking (proportional):
-For lengths 1–2, show as-is. For 3, show the first and last digit, mask the middle with *. For 4+, mask the center with up to 3 asterisks (never more than the number of middle digits, and always leaving at least one visible digit on each end). The total length of the masked string equals the original. Distribute the visible digits around the mask proportionally; when the count of visible digits is odd, the extra visible digit goes to the end.
+role = aws_iam_role.lambda_execution_role.name
 
+will need attention. Don't run terraform plan until we've fixed those remaining references.
 
-public final class MaskUtil {
-    private MaskUtil() {}
+So I suggest you implement steps 1–4 first, then show me your updated iam.tf/main.tf. We can immediately do the policy/attachment portion before you run anything.
 
-    /** Masks the middle of the string with up to 3 asterisks, preserving total length. */
-    public static String maskCentered(String number) {
-        if (number == null) return null;
-        int len = number.length();
-        if (len <= 2) return number;               // nothing to mask
-        if (len == 3) return number.charAt(0) + "*" + number.charAt(2);
-
-        int maskLen = Math.min(3, len - 2);        // keep at least 1 at each end
-        int visible = len - maskLen;
-        int prefixLen = visible / 2;               // floor
-        int suffixLen = visible - prefixLen;       // end gets the extra if odd
-
-        String prefix = number.substring(0, prefixLen);
-        String suffix = number.substring(len - suffixLen);
-        return prefix + "*".repeat(maskLen) + suffix;
-    }
-}
-
-
-
-
-__________________
-
-
-Perfect, Daniel — yes, I can help you break this JIRA feature into proper user stories so it’s easy for your team to track and implement.
-
-From the images you sent, the feature is about setting up and monitoring RAI (Request for Additional Information) letter generation in BEAM, and retiring duplicate process codes.
-
-Let’s translate this into structured JIRA-ready stories 👇
+One more important operational point: because the existing West role is already in Terraform state, we also need to think about how it gets removed from AWS/state safely. Don't manually delete it in AWS yet.
 
 
 ---
 
-🧩 Feature Summary
+Summary in W's Framework:
 
-Feature Name: BEAM Monitoring Setup for Credit Card RAI Letters
-Feature Goal:
-Ensure RAI letter generation, delivery, and monitoring are configured correctly in BEAM, replacing old duplicate process codes, and setting up notifications and retry logic for publishing and delivery failures.
+What – Start converting lambda_execution_role from two regional roles into one shared role.
 
+What for – Satisfy the requirement that East and West use the existing global IAM role.
 
----
+How – Remove the regional suffix from IAM role naming → East creates the role → West looks it up → expose a common local.lambda_execution_role_arn → consumers use that local.
 
-Epic: BEAM Monitoring Setup for RAI Letters
+Where – Start in main.tf and iam.tf; then update Lambda files and kms.tf.
 
-> Parent task that groups all sub-stories for configuration, validation, and retirement.
+When – Do this before deleting the existing -w2 role, and don't apply yet because the IAM policy still needs consolidation.
 
+Who – East Terraform owns the shared role; West Terraform consumes it; Lambdas and KMS in both regions reference it.
 
-
-
----
-
-Story 1: Update BEAM Process to Track RAI Letter Generation
-
-Description:
-Update BEAM process M1S3Z to track RAI letter generation and delivery from Hercules and ECT/Iris.
-
-Acceptance Criteria:
-
-[ ] Process is updated in BEAM Admin (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/M1S3Z)
-
-[ ] The process successfully receives and logs generation events from Hercules and ECT/Iris.
-
-[ ] The status for RAI letters is visible and traceable through BEAM monitoring.
-
-
-Notes:
-
-Reference: 130682_MT_CC_AAN_Mis_Info
-
-
-
----
-
-Story 2: Configure Event Publishing and Retry Logic
-
-Description:
-Ensure BEAM publishes an event when an underwriter requests an RAI letter, and implement retry and failure notification logic.
-
-Acceptance Criteria:
-
-[ ] Event publishing triggers when RAI letter generation is requested.
-
-[ ] System retries up to 5 times in real-time if publishing fails.
-
-[ ] If all retries fail, an email is sent to:
-
-Anuradha.Krishnan1@usaa.com
-
-Connie.Moore@usaa.com
-
-USAA_BNK_AANRBPN_Team@usaa.com
-
-
-[ ] Email subject: CCO - RAI Event Not Published
-
-[ ] Message includes <TemplateId>, <ApplicationId>, and <mbr nbr> placeholders.
-
-[ ] Logs capture failed attempts and retry count.
-
-
-
----
-
-Story 3: Notification for RAI Letter Not Generated
-
-Description:
-If an RAI letter is not generated within 24 hours, create a notification work item.
-
-Acceptance Criteria:
-
-[ ] System checks if the RAI letter was generated within 24 hours.
-
-[ ] If not, a Work Item (3NGHCRBO) is created.
-
-[ ] Description: Credit Card RAI Letter Not Generated.
-
-
-
----
-
-Story 4: Notification for Documentum Save Failure
-
-Description:
-If an RAI letter is not saved to Documentum within 12 hours after generation, trigger a notification.
-
-Acceptance Criteria:
-
-[ ] System checks Documentum save status within 12 hours.
-
-[ ] If missing, a Work Item (3NGHCRBO) is created.
-
-[ ] Description: Credit Card RAI Letter Not in View Docs.
-
-
-
----
-
-Story 5: Notification for UDO Post Failure
-
-Description:
-If an RAI letter fails to post to UDO within 12 hours after generation, trigger a notification.
-
-Acceptance Criteria:
-
-[ ] System checks UDO posting status within 12 hours.
-
-[ ] If missing, a Work Item (3NGHCRBO) is created.
-
-[ ] Description: Credit Card RAI Letter Failed post to UDO.
-
-
-
----
-
-Story 6: Notification for Mail Preference Delivery Failure
-
-Description:
-If member preference is mail and RAI letter is not mailed within 6 days after generation, trigger a notification.
-
-Acceptance Criteria:
-
-[ ] System checks mailing confirmation status.
-
-[ ] If missing, a Work Item (3NGHCRBO) is created.
-
-[ ] Description: Credit Card RAI Letter Not Confirmed Sent by RRD.
-
-
-
----
-
-Story 7: Retire Duplicate BEAM Process Codes
-
-Description:
-Retire the duplicate RAI generation BEAM process codes that are no longer in use.
-
-Acceptance Criteria:
-
-[ ] Deactivate OYHRR (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/OYHRR)
-
-Confirmed that Email and Work Item notifications were deactivated in June 2020.
-
-Ensure process code status changes from ACTIVE to INACTIVE.
-
-
-[ ] Deactivate ONA7O (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/ONA7O)
-
-Confirm monitor is same as M1S3Z.
-
-
-[ ] Update documentation to reflect deactivation.
-
-
-
----
-
-Story 8: Validate Reference BEAM Code and Migration Compatibility
-
-Description:
-Validate that the CL BEAM process code ZKGZC is used for SLOs and confirm backward compatibility of ICE and ECT events.
-
-Acceptance Criteria:
-
-[ ] Verify ZKGZC configuration (https://apps.usaa.com/enterprise/beam-admin/#/configurations/processes/ZKGZC).
-
-[ ] Confirm ICE events are backward compatible with ECT events.
-
-[ ] Reference BEAM wiki:
-
-BKCL Page
-
-Migration Guidance
-
-
-
-
----
-
-✅ Completion Criteria for the Epic
-
-BEAM monitoring for Credit Card RAI letters is active and stable.
-
-Duplicate process codes are retired and confirmed inactive.
-
-All RAI generation, delivery, and failure scenarios produce correct notifications and work items.
-
-Documentation and BEAM wiki are updated accordingly.
-
-
-
----
-
-Would you like me to generate a ready-to-import JIRA CSV or Markdown table for these stories (with fields like Summary, Description, Acceptance Criteria, and Story Points placeholders)?
-That way you can upload it directly into JIRA.
+Why – IAM roles are global → a separate West execution role is unnecessary → but West still needs an execution-role ARN → therefore West should reference the shared role rather than create another one → both regions can then authorize the same role against their regional resources.
