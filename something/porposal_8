@@ -526,3 +526,125 @@ First, in GitLab, we confirmed that Terraform successfully retrieved the existin
 Second, in AWS, we verified that the mandatory policy is attached to the shared role and confirmed that Lambda functions in both us-east-1 and us-west-2 reference the exact same execution role.
 
 Based on these validations, we confirmed that both regions are successfully sharing a single IAM execution role.
+
+
+Here's a Jira-ready investigation summary covering the S3 Batch Replication attempt, the permission investigation, and the reason the historical-object backfill needs Security Team involvement.
+
+I've kept the distinction between the observed failure and the suspected AWS Organizations restriction, so the evidence is technically defensible.
+
+## S3 Batch Replication – Historical Objects Backfill Blocked by AWS Organizations Policy
+
+### 1. Background
+
+As part of this story, S3 cross-region replication was implemented from **us-east-1 (source)** to **us-west-2 (destination)**.
+
+The replication configuration was successfully deployed and validated for newly uploaded objects.
+
+However, S3 replication does not automatically backfill objects that existed before the replication rule was enabled. To address those existing objects, I attempted to use **Amazon S3 Batch Replication**.
+
+### 2. S3 Batch Operations – Job Creation
+
+I followed these steps in the AWS Console:
+
+1. Opened **Amazon S3 → Batch Operations**.
+2. Started the process to create an S3 Batch Replication job.
+3. Selected the source bucket:
+   `bk-pclm-s3-bucket-crde-48654`
+4. Configured the job to use the existing S3 replication rule targeting:
+   `bk-pclm-s3-bucket-crde-48654-w2`
+5. Used the S3 replication IAM role:
+   `bk-pclm-crde-48654-s3-repl-role`
+6. Submitted the job to process existing objects.
+
+The job was created, but it failed during the **manifest preparation stage**, before processing the existing objects.
+
+### 3. Batch Job Failure
+
+The failure reported by AWS was:
+
+> Access denied when accessing arn:aws:s3:::bk-pclm-s3-bucket-crde-48654. s3:PutInventoryConfiguration required for the role.
+
+This indicates that the Batch Operations process could not perform the inventory configuration operation required to prepare the manifest of existing objects.
+
+**Result:** Historical-object replication did not start.
+
+### 4. IAM Permission Investigation
+
+To investigate the failure, I reviewed the S3 replication IAM role and its associated permissions.
+
+**IAM role:**
+`bk-pclm-crde-48654-s3-repl-role`
+
+**Attached policy:**
+`bk-pclm-crde-48654-s3-repl-policy`
+
+The following validations were performed:
+
+1. Verified that the replication IAM policy was attached to the correct role.
+2. Verified that the IAM policy included `s3:PutInventoryConfiguration`.
+3. Verified that the policy referenced the correct source bucket ARN.
+4. Reviewed the IAM role trust configuration, including the S3 Batch Operations service principal `batchoperations.s3.amazonaws.com`.
+5. Reviewed the attached permissions boundary, `DeveloperBoundaryPolicy`, which included S3 permissions.
+
+Despite these configurations, the Batch Operations job continued to encounter the access restriction.
+
+### 5. AWS IAM Policy Simulator Validation
+
+To investigate the effective permissions, I used the **AWS IAM Policy Simulator**.
+
+**Steps performed:**
+
+1. Opened **AWS Console → IAM → Policy Simulator**.
+2. Selected the IAM role `bk-pclm-crde-48654-s3-repl-role`.
+3. Confirmed the associated identity-based policy `bk-pclm-crde-48654-s3-repl-policy`.
+4. Reviewed the `DeveloperBoundaryPolicy` permissions boundary.
+5. Selected the Amazon S3 service.
+6. Selected the `PutInventoryConfiguration` action.
+7. Used the source bucket ARN:
+   `arn:aws:s3:::bk-pclm-s3-bucket-crde-48654`
+8. Executed the simulation and reviewed the authorization result.
+
+**Simulation result: Denied by AWS Organizations.**
+
+The simulator indicated that the permission was restricted at the AWS Organizations level, despite the permission being configured in the role's IAM policy.
+
+This provides evidence that the failure is related to organizational permission enforcement rather than simply a missing permission in our replication role.
+
+### 6. Root Cause and Impact
+
+**Identified blocker:** AWS Organizations policy restrictions affecting `s3:PutInventoryConfiguration`.
+
+The S3 Batch Replication process requires this permission during manifest preparation. The effective permission evaluation prevents the operation from proceeding.
+
+The applicable AWS Organizations Service Control Policies (SCPs) need to be reviewed by the Security/Cloud Platform team to determine the exact policy restriction and appropriate remediation.
+
+**Impact:**
+
+- New S3 objects: Replication from East to West is working.
+- Existing S3 objects: Backfill through S3 Batch Replication is blocked.
+- No changes to the working new-object replication configuration are required to investigate this issue.
+
+### 7. Required Follow-up
+
+The following actions require Security/Cloud Platform team involvement:
+
+1. Review the AWS Organizations policies applicable to the AWS account.
+2. Identify the SCP or organizational permission restriction affecting `s3:PutInventoryConfiguration`.
+3. Determine whether an approved policy adjustment or alternative authorized backfill approach is appropriate.
+4. Once access is resolved, retry the S3 Batch Replication job.
+5. Validate that historical objects are successfully replicated to us-west-2.
+
+### 8. Final Status
+
+**S3 cross-region replication for new objects: PASSED**
+
+**S3 Batch Replication for historical objects: BLOCKED**
+
+**Reason:** The IAM Policy Simulator identified an AWS Organizations-level restriction affecting the required `s3:PutInventoryConfiguration` permission.
+
+**Next action:** Engage the Security/Cloud Platform team to review the applicable organizational policies.
+
+Historical-object backfill will be handled separately and does not affect the successfully validated replication of newly uploaded objects.
+
+For Jira evidence, attach the failed Batch Operations job details, the S3 replication role policy showing `s3:PutInventoryConfiguration`, and the IAM Policy Simulator result showing “Denied by AWS Organizations.” Those three screenshots establish the failure, the configured permission, and the organization-level restriction.
+
