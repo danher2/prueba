@@ -233,4 +233,96 @@ step 10
 "Resource": [
   "arn:aws:secretsmanager:${source_region}:${account_id}:secret:usaa-esg-mgd-secret-${pclm_sa_user_name}-*",
   "arn:aws:secretsmanager:${destination_region}:${account_id}:secret:usaa-esg-mgd-secret-${pclm_sa_user_name}-*"
-]
+
+
+
+File: usaa_mandatory_lambda_policy.json.tftpl
+In this file, I updated the mandatory Lambda IAM policy to support both AWS regions. Specifically, I extended the KMS and Secrets Manager permissions to include resources in us-east-1 and us-west-2. I also updated the KMS service condition to cover both regions.
+
+This ensures that our shared execution role has the required regional permissions regardless of where the Lambda is running.
+
+
+account_validator_lambda.tf and 12 other Lambda/Step Functions
+In these 13 files, I updated the "existing_iam_role_arn" parameter to reference "local.lambda_execution_role_arn" instead of the previous role ARN reference.
+
+The purpose of this change is to make both regions use the same shared IAM execution role.
+
+The local variable resolves the role ARN based on the region. In the primary region, it references the IAM role managed by Terraform. In the secondary region, it references the existing IAM role through a Terraform data source.
+
+This allows our Lambda functions and Step Functions to use the same IAM role without creating a separate role in us-west-2.
+
+
+iam.tf
+In this file, I made several changes to support a single shared IAM execution role across both AWS regions.
+
+First, I removed the regional postfix from the IAM role name. This ensures that the role has the same name regardless of which region we're deploying to.
+
+Second, I added a conditional "count" to the IAM role, mandatory IAM policy, and policy attachment resources using "local.is_primary". This ensures that these resources are created and managed only in the primary region, us-east-1, preventing Terraform from trying to create duplicate IAM resources in us-west-2.
+
+Third, I created the "local.lambda_execution_role_arn" variable to dynamically resolve the IAM role ARN. In the primary region, it references the role created by Terraform. In the secondary region, it references the existing role through a Terraform data source.
+
+Finally, I updated the mandatory policy template configuration to pass both "source_region" and "destination_region". These values allow the policy to grant the required KMS and Secrets Manager permissions in both regions.
+
+Overall, these changes centralize IAM role management in the primary region while allowing Lambda functions and Step Functions in both regions to share the same execution role.
+
+
+kms.tf
+In this file, I made three changes to support S3 cross-region replication and our shared IAM execution role.
+
+First, I replaced the direct reference to the Lambda execution role ARN with "local.lambda_execution_role_arn" in two KMS permission mappings. This ensures that the KMS configuration uses the same shared IAM role in both regions.
+
+Second, I introduced "local.s3_replication_role_arn_for_kms" to construct the ARN of our S3 replication IAM role. This role is responsible for allowing S3 to replicate encrypted objects from us-east-1 to us-west-2.
+
+Finally, I updated "additional_kms_key_data_role_arns" to conditionally include the S3 replication role when "local.s3_replication_enabled" is true.
+
+The purpose is to authorize the S3 replication role to use the KMS keys required for replication. It needs permission to decrypt source objects in the East region and encrypt their replicas in the West region.
+
+Overall, these changes ensure that our KMS configuration supports both the shared Lambda execution role and encrypted S3 cross-region replication.
+
+
+main.tf
+In this file, I made three main changes to support S3 cross-region replication and the shared IAM execution role.
+
+First, I introduced four local variables for S3 replication: "s3_replication_enabled", "s3_replication_source_region", "s3_replication_destination_region", and "is_s3_replication_source".
+
+These variables allow us to control whether replication is enabled, identify the source and destination regions, and determine whether the current deployment is running in the source region. This is important because the S3 replication configuration should be managed from the source region.
+
+Second, I updated the IAM role naming convention by removing the regional postfix. Since IAM roles are global within an AWS account, we don't need separate role names for East and West. However, I kept the existing postfix for the IAM policy name.
+
+Finally, I added a Terraform "aws_iam_role" data source to look up the existing Lambda execution role in the secondary region. The data source uses a conditional count, so it runs only in us-west-2.
+
+This allows the primary deployment to manage the IAM role while the secondary deployment references that same role instead of creating another one.
+
+Overall, these changes establish the region-aware configuration required for S3 replication and allow both regions to share a single IAM execution role.
+
+
+S3 replication tf
+
+In this file, I implemented the Terraform configuration for S3 cross-region replication from us-east-1 to us-west-2.
+
+Unlike DynamoDB, where our existing Terraform module already supports replication through configuration variables, our S3 module doesn't provide that functionality. Therefore, I had to implement the S3 replication resources explicitly.
+
+The configuration includes an IAM replication role that allows the Amazon S3 service to perform replication operations. It also includes the permissions required to read objects and their metadata from the source bucket and replicate them into the destination bucket.
+
+I added the replication configuration to connect the source and destination buckets, including the destination region and the IAM role used by S3.
+
+I also used conditional logic to ensure that the replication resources are managed only from the source region when replication is enabled. This prevents duplicate replication configurations across regional deployments.
+
+Since our buckets use KMS encryption, the replication role also needs the appropriate permissions to decrypt source objects and encrypt replicas using the destination KMS key. The corresponding KMS key authorization is handled in "kms.tf".
+
+Overall, this file contains the core S3 replication configuration that enables newly uploaded objects in our East bucket to be automatically replicated into the West bucket.
+
+
+variables.tf
+
+In this file, I introduced three Terraform variables to make our S3 cross-region replication configurable.
+
+First, I added "s3_replication_enabled", a Boolean variable with a default value of "true". This allows us to enable or disable the S3 replication resources without modifying the Terraform code.
+
+Second, I added "s3_replication_source_region", which defaults to "us-east-1". This identifies the AWS region containing our source S3 bucket.
+
+Third, I added "s3_replication_destination_region", which defaults to "us-west-2". This identifies the AWS region where our replicated objects should be stored.
+
+These variables are referenced in "main.tf", where we use them to define the local configuration and determine which regional deployment is responsible for managing S3 replication.
+
+Overall, the purpose of these changes is to make our S3 replication configuration reusable, flexible, and easier to maintain without hardcoding the replication settings throughout our Terraform resources.
