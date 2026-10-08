@@ -371,3 +371,158 @@ Validation steps:
 7. Compare: Confirm that both Lambdas reference the exact same IAM role ARN.
 
 Expected result: A single IAM execution role is managed by the primary Terraform deployment and shared by Lambda functions in both regions.
+
+
+especific
+
+
+
+### Scenario 2: Shared IAM execution role — Validation walkthrough
+
+Here are the seven validation steps, including exactly where to go and what to look for during your demo.
+
+### 1\. GitLab pipeline — Verify Terraform deployment
+
+How:
+
+* Open GitLab → Build → Pipelines.
+
+* Select the pipeline for your branch (`crde-48654`).
+
+* Verify that the Terraform plan and apply/deployment jobs completed successfully (green status).
+
+* Open the `us-west-2` Terraform plan job and review its logs.
+
+Expected: Both Terraform plan and apply jobs show `Success`.
+
+### 2\. Terraform plan — Verify West reads the existing IAM role
+
+How:
+
+In the `us-west-2` Terraform plan logs, search using `Ctrl + F` for:
+
+`data.aws_iam_role.lambda_execution_role[0]`
+
+You should find messages similar to:
+
+```text
+data.aws_iam_role.lambda_execution_role[0]: Reading...
+data.aws_iam_role.lambda_execution_role[0]: Read complete
+```
+
+Expected: Terraform successfully retrieves the existing IAM role instead of creating a new one.
+
+### 3\. Terraform plan — Verify no new IAM role or policy attachment in West
+
+How:
+
+In the same `us-west-2` Terraform plan logs, search for:
+
+```text
+aws_iam_role.lambda_execution_role
+aws_iam_role_policy_attachment.usaa_mandatory_lambda
+aws_iam_policy.usaa_mandatory_lambda_policy
+```
+
+Check that none of these appear as:
+
+```text
++ create
+```
+
+Also check the Terraform plan summary. Yesterday, our West plan showed:
+
+```text
+Plan: 13 to add, 23 to change, 0 to destroy.
+```
+
+Expected: No IAM execution role, mandatory policy, or policy attachment is created in the West deployment.
+
+Note: The 13 additions were not new IAM execution roles.
+
+### 4\. AWS IAM — Verify mandatory policy attachment
+
+How:
+
+* Open AWS Console → IAM → Policies.
+
+* Search for `USAAMandatoryPolicy`.
+
+* Open the policy associated with your application.
+
+* Select Entities attached.
+
+* Verify the attached role.
+
+Yesterday, we confirmed:
+
+```text
+bk-pclm-app-bk-pclm-update-credit-limit-iam-role-crde-48654
+```
+
+Expected: The mandatory policy is attached to the shared IAM role.
+
+### 5\. AWS Lambda West — Verify execution role
+
+How:
+
+* Switch AWS Console to us-west-2.
+
+* Open Lambda → Functions.
+
+* Search for `bk-pcli-account-validator-crde-48654-lambda-w2`.
+
+* Select Configuration → Permissions.
+
+* Check Execution role → Role name.
+
+Expected role:
+
+```text
+bk-pclm-app-bk-pclm-update-credit-limit-iam-role-crde-48654
+```
+
+### 6\. AWS Lambda East — Verify execution role
+
+How:
+
+* Switch AWS Console to us-east-1.
+
+* Open Lambda → Functions.
+
+* Search for `bk-pcld-account-validator-crde-48654-lambda`.
+
+* Select Configuration → Permissions.
+
+* Check Execution role → Role name.
+
+Expected role:
+
+```text
+bk-pclm-app-bk-pclm-update-credit-limit-iam-role-crde-48654
+```
+
+### 7\. Compare — Confirm both regions share the same IAM role
+
+How:
+
+Compare the execution role displayed in steps 5 and 6.
+
+| Region    | IAM role               |
+| --------- | ---------------------- |
+| us-east-1 | ...iam-role-crde-48654 |
+| us-west-2 | ...iam-role-crde-48654 |
+
+For an additional check, click each role name and compare its ARN in IAM.
+
+Expected: Both regions reference the exact same IAM role ARN, with no `-w2` suffix.
+
+### Final statement for your demo
+
+We validated the shared IAM role implementation at two levels.
+
+First, in GitLab, we confirmed that Terraform successfully retrieved the existing IAM role in the secondary region without creating another IAM role or mandatory policy attachment.
+
+Second, in AWS, we verified that the mandatory policy is attached to the shared role and confirmed that Lambda functions in both us-east-1 and us-west-2 reference the exact same execution role.
+
+Based on these validations, we confirmed that both regions are successfully sharing a single IAM execution role.
