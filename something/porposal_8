@@ -326,3 +326,48 @@ Third, I added "s3_replication_destination_region", which defaults to "us-west-2
 These variables are referenced in "main.tf", where we use them to define the local configuration and determine which regional deployment is responsible for managing S3 replication.
 
 Overall, the purpose of these changes is to make our S3 replication configuration reusable, flexible, and easier to maintain without hardcoding the replication settings throughout our Terraform resources.
+
+-----------------------
+valitations
+
+Scenario 1: S3 cross-region replication
+Acceptance Criteria: New objects uploaded to the S3 bucket in us-east-1 must automatically replicate to the corresponding bucket in us-west-2.
+
+Given S3 cross-region replication is enabled and configured through Terraform, with us-east-1 as the source region and us-west-2 as the destination region,
+
+When the Terraform changes are deployed and a new object is uploaded to the source S3 bucket,
+
+Then Amazon S3 automatically replicates that object to the destination bucket in us-west-2.
+
+Validation steps:
+
+1. GitLab Pipeline: Verify that the Terraform plan and deployment completed successfully.
+2. AWS S3 East: Open the source bucket and verify that the replication rule is enabled and points to the West bucket.
+3. Upload Test: Upload a new test file to the source bucket in us-east-1.
+4. AWS S3 West: Open the destination bucket and verify that the same file appears.
+5. Replication Status: Verify that the source object's replication status is "COMPLETED".
+
+Expected result: New S3 objects are automatically replicated from East to West without manual intervention.
+
+
+Scenario 2: Shared IAM execution role
+Acceptance Criteria: Remove the separate IAM execution role from the secondary deployment and use the existing role managed in us-east-1 for Lambda functions in both regions.
+
+
+Given the primary region manages a single IAM execution role and the secondary region is configured to reference that existing role,
+
+When Terraform is deployed to both us-east-1 and us-west-2,
+
+Then both regional deployments use the same IAM execution role without creating a separate role for us-west-2.
+
+Validation steps:
+
+1. GitLab Pipeline: Verify that the Terraform plan and deployment completed successfully.
+2. Terraform Plan (West): Confirm that "data.aws_iam_role.lambda_execution_role[0]" successfully reads the existing role.
+3. Terraform Plan (West): Confirm that no new IAM execution role or mandatory policy attachment is created in West.
+4. AWS IAM: Open the mandatory Lambda policy and verify that it is attached to the shared IAM role.
+5. AWS Lambda West: Open the Account Validator Lambda → Configuration → Permissions and verify its execution role.
+6. AWS Lambda East: Open the Account Validator Lambda → Configuration → Permissions and verify its execution role.
+7. Compare: Confirm that both Lambdas reference the exact same IAM role ARN.
+
+Expected result: A single IAM execution role is managed by the primary Terraform deployment and shared by Lambda functions in both regions.
