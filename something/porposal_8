@@ -648,3 +648,97 @@ Historical-object backfill will be handled separately and does not affect the su
 
 For Jira evidence, attach the failed Batch Operations job details, the S3 replication role policy showing `s3:PutInventoryConfiguration`, and the IAM Policy Simulator result showing “Denied by AWS Organizations.” Those three screenshots establish the failure, the configured permission, and the organization-level restriction.
 
+
+
+You need to modify 2 files to give the shared IAM execution role access to the S3 buckets in both East and West.
+
+### 1\. File: `iam.tf`
+
+Inside the mandatory Lambda policy's `templatefile()` block, find:
+
+```hcl
+pclm_s3_bucket_arn          = local.pclm_s3_bucket_arn
+pclm_s3_bucket_arn_wildcard = local.pclm_s3_bucket_arn_wildcard
+```
+
+Add these two lines immediately below:
+
+```hcl
+pclm_s3_bucket_arn_west          = "${local.pclm_s3_bucket_arn}-w2"
+pclm_s3_bucket_arn_west_wildcard = "${local.pclm_s3_bucket_arn}-w2/*"
+```
+
+Purpose: Pass the West bucket ARN and its object wildcard ARN into the IAM policy template.
+
+No commas are needed in this Terraform map.
+
+### 2\. File: `usaa_mandatory_lambda_policy.json.tftpl`
+
+Update two sections.
+
+### A. `S3BucketAccess`
+
+Replace the `Resource` array with:
+
+```json
+"Resource": [
+  "${pclm_s3_bucket_arn}",
+  "${pclm_s3_bucket_arn_wildcard}",
+  "${pclm_s3_bucket_arn_west}",
+  "${pclm_s3_bucket_arn_west_wildcard}",
+  "${pclm_s3_bucket_arn_MFP}",
+  "${pclm_s3_bucket_arn_MFP_wildcard}"
+]
+```
+
+Purpose: Allow bucket-level operations, such as `s3:ListBucket`, on the West bucket as well as the existing buckets.
+
+### B. `S3ObjectAccess`
+
+Replace the `Resource` array with:
+
+```json
+"Resource": [
+  "${pclm_s3_bucket_arn}",
+  "${pclm_s3_bucket_arn_wildcard}",
+  "${pclm_s3_bucket_arn_west}",
+  "${pclm_s3_bucket_arn_west_wildcard}",
+  "${pclm_s3_bucket_arn_MFP}",
+  "${pclm_s3_bucket_arn_MFP_wildcard}"
+]
+```
+
+Purpose: Allow object-level operations, particularly `s3:GetObject`, on files stored in the West bucket.
+
+### 3\. Expected result
+
+Shared IAM execution role
+
+Updated mandatory IAM policy
+
+East S3
+
+us-east-1
+
+West S3
+
+us-west-2
+
+### 4\. Validation after deployment
+
+* Run the Terraform pipeline and verify the plan updates the existing mandatory IAM policy.
+
+* Confirm the deployment succeeds.
+
+* Open IAM → Policies → mandatory Lambda policy and verify the West bucket ARN appears.
+
+* Upload a new file to `PCLM/PCLI/` in West.
+
+* Check the West Publisher Lambda's CloudWatch logs for `s3:GetObject` errors.
+
+* Verify whether the West Step Function starts.
+
+Important: Before deploying, confirm `local.pclm_s3_bucket_arn` resolves to the East bucket ARN and that appending `-w2` produces the actual West bucket ARN. The previously observed KMS error may also require a separate fix.
+
+These changes address the confirmed missing S3 permissions; they do not yet establish that the entire West processing flow will succeed.
+
