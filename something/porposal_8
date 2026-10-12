@@ -742,3 +742,7 @@ Important: Before deploying, confirm `local.pclm_s3_bucket_arn` resolves to the 
 
 These changes address the confirmed missing S3 permissions; they do not yet establish that the entire West processing flow will succeed.
 
+
+
+This change is required to consolidate Lambda execution roles into a single IAM role shared across us-east-1 and us-west-2, ensuring consistent permissions and simplifying IAM management. Additionally, the DynamoDB replica timeout is increased to 60 minutes to prevent deployment failures caused by cross-region provisioning delays. KMS permissions are updated to include the required additional roles, and view-only roles are added to the IAM and KMS configurations to provide authorized read-only access while maintaining existing security controls.
+
