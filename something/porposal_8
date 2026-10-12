@@ -746,3 +746,6 @@ These changes address the confirmed missing S3 permissions; they do not yet esta
 
 This change is required to consolidate Lambda execution roles into a single IAM role shared across us-east-1 and us-west-2, ensuring consistent permissions and simplifying IAM management. Additionally, the DynamoDB replica timeout is increased to 60 minutes to prevent deployment failures caused by cross-region provisioning delays. KMS permissions are updated to include the required additional roles, and view-only roles are added to the IAM and KMS configurations to provide authorized read-only access while maintaining existing security controls.
 
+
+
+This change updates the Terraform infrastructure configuration to use a single shared IAM execution role for AWS Lambda functions across us-east-1 and us-west-2, removing the need for a separate role in the secondary region. It also increases the DynamoDB replica timeout to 60 minutes, updates KMS key permissions to include additional authorized roles, and updates IAM and KMS configurations to support view-only access. These changes improve cross-region compatibility, simplify resource management, and maintain consistent access permissions across both regions.
