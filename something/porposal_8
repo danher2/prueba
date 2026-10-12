@@ -753,3 +753,10 @@ This change updates the Terraform infrastructure configuration to use a single s
 IAM roles in AWS are global resources within an AWS account, so there is no need to maintain a separate IAM role for the us-west-2 region. This change consolidates Lambda execution permissions into a single IAM role shared across us-east-1 and us-west-2, reducing resource duplication and simplifying access management. Additionally, the DynamoDB replica timeout is increased to 60 minutes to prevent deployment failures, and KMS permissions are updated to include the required additional and view-only roles while maintaining existing security controls.
 
 On the production run date (MM/DD), as records are processed, we will confirm that records written to the DynamoDB table in us-east-1 are being replicated to the replica table in us-west, and that the replica table is Active. We will also confirm that User View Only (UVO) roles can read the encrypted data in DynamoDB and S3 without access errors. If any issues are found, we will follow the rollback and remediation steps described abov
+
+"This change affects Proactive Credit Line Management, specifically the PCLI and PCLD services, and indirectly our members.
+We won't see any real impact until the production run on 10/22. If something goes wrong during that run, we'll roll back to the previous version and let the business know.
+For dependencies, the PCLD and PCLI audience file needs to arrive in the S3 bucket on the scheduled date for the run to happen.
+The impact is small, a 1 to 10 out of 10. If any records are affected, we already have fixes we can run to correct them.
+If we do roll back, IT will fix the issue and redeploy before the run date. If we can't fix it in time, we'll tell the business and recommend postponing the monthly run."
+Two things to check before you present:
