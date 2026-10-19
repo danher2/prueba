@@ -1,0 +1,6 @@
+Verify the audience .VAT file exists in the S3 bucket under PCLM/PCLI/. Check the archive folder if the file is missing.
+Validate the file name, S3 path, and file format.
+Check the S3 event notification configuration to confirm it triggers the Audience Publisher Lambda.
+Review the Publisher Lambda's CloudWatch logs for invocation or processing errors.
+Verify whether the PCLI Step Function execution was started.
+If processing did not start, resolve the underlying issue and follow the approved reprocessing procedure, ensuring no duplicate execution exists.
