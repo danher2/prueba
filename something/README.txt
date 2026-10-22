@@ -1,71 +1,67 @@
-OneNote Viewer
-==============
+My Notes
+========
 
-Reads your OneNote section files (.one) WITHOUT the OneNote app and builds a
-browsable, searchable copy of all your notes that opens in any web browser.
+A OneNote-style notes app that you own: Notebooks > Sections > Pages.
+It runs only on your computer and opens in your browser. Nothing is sent anywhere.
 
-Your original files are only read. Nothing is changed, uploaded or sent anywhere.
-Everything runs on your own machine.
+FILES (keep all of them together in one folder)
+-----
+  Start My Notes.bat   double-click this to start
+  MyNotes.jar          the app (optional - see below)
+  NotesApp.java        the app's source code
+  notes-ui.html        the app's screen
+  README.txt           this file
 
-What you need
+If your computer blocks MyNotes.jar, just leave it out: the .bat then runs the
+app straight from NotesApp.java (needs Java 11 or newer).
+
+START IT
+--------
+Double-click "Start My Notes.bat".
+Your browser opens with your notes. Leave the app running while you use it.
+To stop it: the ... menu (top left) > Quit My Notes.
+Starting it again while it's running just opens the same notes.
+
+Needs Java 8 or newer. Check with:  java -version
+
+WHERE YOUR NOTES ARE SAVED
+--------------------------
+If OneDrive is set up on the computer, notes go to:
+    OneDrive - <your company>\MyNotes
+otherwise to:
+    Documents\MyNotes
+The bottom bar of the app shows the exact folder. Change it with
+... menu > Change notes folder. If the new folder is empty, your notes are copied there.
+
+Inside that folder, notebooks and sections are normal folders and every page is a
+normal .html file. You can open any page in a browser even without this app.
+  MyNotes\Daily\Oct 2026\20261022-1405-3f9a2c.html
+  MyNotes\Daily\Oct 2026\_assets\          (pictures and attached files)
+  MyNotes\_Trash\                          (deleted things, in case you need them back)
+
+ONEDRIVE TIPS
 -------------
-Python 3.8 or newer. No pip installs and no internet are needed - everything is
-in this folder.
+- OneDrive syncs the folder by itself, so your notes are backed up.
+- Use the app on one computer at a time. If two computers edit the same page
+  before OneDrive syncs, OneDrive keeps both as separate copies.
 
-How to run it (Windows)
------------------------
-Easiest: drag the folder that holds your notebooks onto "Open my notebooks.bat".
-(Or double-click it and paste the folder path when it asks.)
+BRING IN YOUR OLD ONENOTE NOTES
+-------------------------------
+1. Run Build-OneNoteViewer.ps1 (makes Desktop\OneNoteViewer).
+2. In My Notes: ... menu > Import my OneNote notes > pick that OneNoteViewer folder.
+All notebooks, sections, pages, pictures and attachments are added.
 
-Or from a Command Prompt in this folder:
+LINKS
+-----
+Click a link to open it. Right-click a link to edit or remove it.
+- Web addresses:      https://...   (typed addresses become links when you press space)
+- Files and folders:  C:\folder\page.html  or  \\server\share\file  (opens with its normal program)
+- Other pages:        page ... menu > Copy link to page, then paste it anywhere
+Ctrl+K inserts a link.
 
-    python onenote_viewer.py "C:\path\to\Notebooks"
+SHORTCUTS
+---------
+Ctrl+N new page      Ctrl+E search everything    Ctrl+K link        Ctrl+1 to-do box
+Ctrl+Alt+1/2/3 headings    Ctrl+. bullets    Ctrl+/ numbering    Tab / Shift+Tab indent
+Paste or drag pictures and files straight into a page. Pages save by themselves.
 
-Point it at the folder that contains your notebook folders, for example:
-
-    Notebooks\
-        Dayli\        <- notebook (its .one files are the sections)
-            Oct 2026.one
-            Sep 2024.one
-            Open Notebook.onetoc2
-        Work\
-        Personal\
-
-You can also pass several folders, single .one files, or .onepkg files.
-
-When it finishes, it opens "OneNote Viewer\index.html" (created next to the
-folder you gave it). Use -o "C:\some\other\folder" to choose where it goes.
-
-Using the viewer
-----------------
-- Left side: notebooks > sections > pages, with the page date.
-- Search box (press /): searches every page of every notebook at once.
-  Matches are highlighted; use the up/down arrows at the top to jump between them.
-- "Copy page": copies the page so you can paste it into a page in OneNote web
-  (text, formatting, lists and tables come across; re-insert images by hand).
-- Images open full size when clicked. Attachments download when clicked.
-- Alt+Up / Alt+Down: previous / next page.
-
-What it reads
--------------
-Text and formatting (bold, italic, underline, strikethrough), headings,
-indentation, bullets and numbering, to-do checkboxes, tables, links, images,
-attached files, text from printouts, page titles and dates.
-
-Not shown: handwriting/ink drawings, and exact positions of note containers
-on the page (content is shown top to bottom).
-
-If a section shows "text only"
-------------------------------
-That section's format couldn't be fully read (for example sections downloaded
-from OneDrive/SharePoint, or very old OneNote 2007 files). The viewer then shows
-all the text it could recover from the file. report.txt lists every section and
-how it was read.
-
-Credits
--------
-Uses a patched copy of pyOneNote by Amirreza Niakanlahiji (Apache License 2.0,
-see pyOneNote/LICENSE). Changes are marked "[onenote_viewer patch]" in
-pyOneNote/FileNode.py: reading edited (revised) objects, large/read-only object
-declarations, object-reference lists, nested property arrays, and skipping
-unknown records safely.
