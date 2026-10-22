@@ -51,6 +51,14 @@ BRING IN YOUR OLD ONENOTE NOTES
 2. In My Notes: ... menu > Import my OneNote notes > pick that OneNoteViewer folder.
 All notebooks, sections, pages, pictures and attachments are added.
 
+THE SCREEN
+----------
+Left: notebooks and sections.  Middle: the page you are writing.  Right: the page list.
+Drag the edge of the left or right column to resize it (double-click the edge to reset).
+Create as many notebooks, sections and pages as you like, with any names:
+  + Notebook (bottom left)   + Section (under a notebook)   + Page (top of the page list)
+The ... next to any notebook, section or page renames, moves or deletes it.
+
 LINKS
 -----
 Click a link to open it. Right-click a link to edit or remove it.
