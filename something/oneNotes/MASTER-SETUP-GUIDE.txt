@@ -1,0 +1,224 @@
+MY NOTES - MASTER SETUP GUIDE
+=============================
+
+Three parts, done once:
+  Part 1  Build the OneNote Viewer from your .one files (PowerShell script)
+  Part 2  Set up and start My Notes
+  Part 3  Import your OneNote notes into My Notes
+After that you only use My Notes.
+
+
+WHAT YOU NEED
+-------------
+Java 11 or newer on the computer, plus these files from Claude
+(you do NOT need MyNotes.jar - the app runs without it):
+
+  File                      What it is                          Where it goes
+  ------------------------  ----------------------------------  ---------------------------------
+  Build-OneNoteViewer.ps1   Reads your .one files, builds a     Documents\Note  (the folder that
+                            viewer                              holds Dayli, Stories, Tutorials)
+  Start My Notes.bat        Starts My Notes                     Documents\My Notes
+  NotesApp.java             The My Notes app                    Documents\My Notes
+  notes-ui.html             The My Notes screen                 Documents\My Notes
+  README.txt                Short help                          Documents\My Notes
+
+Check Java once: open Command Prompt and type   java -version
+It must show 11 or higher (for example 17.0.x or 21.0.x).
+If it shows 1.8, or Java is not found, ask IT for Java 11 or newer.
+
+
+PART 1: BUILD THE ONENOTE VIEWER
+--------------------------------
+The script reads every .one file under Documents\Note and builds a searchable
+copy of all pages at Desktop\OneNoteViewer. It only reads your files; it never
+changes them.
+
+1. Put Build-OneNoteViewer.ps1 in Documents\Note, next to the Dayli, Stories
+   and Tutorials folders. Replace any older copy.
+
+2. If it came from the internet, unblock it:
+   right-click it > Properties > tick "Unblock" > OK.
+   (No Unblock box means nothing to do.)
+
+3. Open PowerShell and run:
+
+   powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Documents\Note\Build-OneNoteViewer.ps1"
+
+   Or right-click the file > Run with PowerShell.
+
+4. Wait while it lists each section. Green = fully read; yellow = text only.
+   Five years of notes can take a few minutes.
+
+5. When it finishes, the viewer opens in your browser. Check that pages look right.
+
+The result is Desktop\OneNoteViewer, with index.html, an "assets" folder
+(pictures and attachments) and report.txt (how each section was read).
+Run the script again any time to rebuild it; it replaces the old viewer.
+
+If it says "not digitally signed" even after unblocking, the computer only
+allows scripts approved by IT. Ask IT; don't try to get around it.
+
+
+PART 2: SET UP AND START MY NOTES
+---------------------------------
+1. Create the folder Documents\My Notes.
+
+2. Download Start My Notes.bat, NotesApp.java, notes-ui.html and README.txt
+   into it. Keep all four together. The folder can be anywhere, but the files
+   must stay side by side.
+
+3. Double-click "Start My Notes.bat". A black window opens and, after a few
+   seconds, My Notes opens in your browser.
+
+4. Keep the black window open while you use My Notes.
+   To stop: ... menu > Quit My Notes, or close the black window.
+
+5. Next time, double-click the .bat again. If it's already running, it just
+   opens the same notes.
+
+If the .bat is blocked: open Command Prompt in Documents\My Notes and type
+   java NotesApp.java
+It does the same thing.
+
+Don't double-click notes-ui.html; it only works when My Notes opens it.
+
+To update My Notes later: replace the files in Documents\My Notes, then
+restart it (... > Quit My Notes, then the .bat again). Your notes are not touched.
+
+
+PART 3: IMPORT YOUR ONENOTE NOTES
+---------------------------------
+Import brings every notebook, section, page, picture and attachment from the
+viewer into My Notes. Do it once.
+
+1. Make sure Part 1 is done and Desktop\OneNoteViewer\index.html exists.
+
+2. In My Notes, click ... (top left) > Import my OneNote notes.
+
+3. Check the folder box shows your OneNoteViewer folder
+   (normally C:\Users\<you>\Desktop\OneNoteViewer).
+   If your Desktop lives in OneDrive, paste that path instead.
+
+4. Click Import and wait. It reports how many pages came in.
+
+Running the import twice adds a second copy. If that happens, delete the extra
+notebooks (... next to the notebook > Delete notebook).
+After the import you no longer need the viewer or the script, but keep them
+until you've checked your notes.
+
+
+EVERYDAY USE
+------------
+My Notes works like OneNote: notebooks hold sections, sections hold pages.
+Create as many of each as you want, with any names.
+
+The screen:  Left = notebooks and sections.  Middle = the page you're writing.
+             Right = the page list.
+Drag the edge of the left or right column to resize it
+(double-click the edge to reset).
+
+- New notebook:   + Notebook (bottom left)
+- New section:    + Section under an open notebook, or ... next to the notebook
+- New page:       + Page at the top of the page list, or Ctrl+N
+- Rename, move or delete: the ... next to any notebook, section or page
+  (or right-click it). Deleted items go to the _Trash folder, so you can get
+  them back.
+- Reorder pages:  drag them in the page list. Drag a page onto a section to
+  move it there.
+- Search everything: the search box at the top left (Ctrl+E)
+  Words find pages that contain all of them. "Quotes" or (parentheses)
+  around words find that exact phrase, e.g. "cab meeting".
+- Pictures and files: paste or drag them into a page.
+- Pages save by themselves.
+
+LINKS
+Click a link to open it. Right-click a link to edit or remove it.
+Ctrl+K inserts one.
+
+  Link to                     Type or paste                         Opens
+  --------------------------  ------------------------------------  ---------------------------
+  Web page                    https://...  (becomes a link when     In a new browser tab
+                              you press space)
+  File or folder on your      C:\folder\page.html  or               With its normal program;
+  computer                    \\server\share\file                   .html opens in the browser
+  Another page in My Notes    Page ... > Copy link to page,         That page
+                              then paste
+
+SHORTCUTS
+  Ctrl+N               New page
+  Ctrl+E               Search all notes
+  Ctrl+K               Insert or edit a link
+  Ctrl+1               To-do checkbox
+  Ctrl+Alt+1 / 2 / 3   Heading 1 / 2 / 3
+  Ctrl+Alt+0           Normal text
+  Ctrl+.  /  Ctrl+/    Bullets / numbering
+  Tab / Shift+Tab      Indent / outdent (next cell in a table)
+  Ctrl+Alt+H           Highlight
+  Alt+Shift+F          Insert date and time
+
+
+WHERE YOUR NOTES LIVE
+---------------------
+Your notes are saved in C:\Users\PL1T678\OneDrive\MyNotes, inside OneDrive,
+so OneDrive backs them up and syncs them by itself. The bar at the bottom of
+My Notes always shows the folder in use; change it with
+... > Change notes folder.
+
+Each page is a normal .html file. Notebooks and sections are folders:
+
+  MyNotes\
+    Dayli\                         notebook (folder)
+      Oct 2026\                    section (folder)
+        20261022-1405-3f9a2c.html  a page
+        _assets\                   pictures and attachments
+        .order                     the page order
+    _Trash\                        deleted items
+
+- Any page opens in a browser or Notepad, even without My Notes.
+- A one-line page is about 1 KB; a page a day for five years is a few MB.
+- Don't delete .order files; if one goes missing, items just fall back to
+  date order.
+- Use My Notes on one computer at a time. If two computers edit the same page
+  before OneDrive syncs, OneDrive keeps both copies.
+- No OneDrive sync app on a computer? Notes go to Documents\MyNotes there.
+  Back them up by uploading that folder at onedrive.com (Upload > Folder).
+
+
+TROUBLESHOOTING
+---------------
+Script says "not digitally signed"
+  Unblock the file (Part 1, step 2). Still blocked > IT must approve scripts.
+
+Script says "No .one files found"
+  Put the script in Documents\Note, next to the notebook folders.
+
+Viewer: some sections say "text only"
+  That section's format couldn't be fully read; the text is still there.
+  Send Claude report.txt.
+
+Viewer: odd symbols
+  Use the newest Build-OneNoteViewer.ps1, run it again, then import again.
+
+Double-clicking the .bat does nothing
+  Open Command Prompt in Documents\My Notes and run  java NotesApp.java
+  to see the error.
+
+"Java was not found" or Java 1.8
+  Ask IT for Java 11 or newer.
+
+Browser says the page can't be reached
+  My Notes isn't running. Start it with the .bat again.
+
+"This tab is from an older session"
+  My Notes was restarted. Close the tab and use the one the .bat opens.
+
+Import says "Couldn't find index.html"
+  Point the import at the folder that contains index.html (Part 3, step 3).
+
+A local file link says "Not found"
+  The file moved or was renamed. Right-click the link > Edit link and fix
+  the path.
+
+A page was deleted by mistake
+  Find it in MyNotes\_Trash and copy the .html file back into its section
+  folder.
