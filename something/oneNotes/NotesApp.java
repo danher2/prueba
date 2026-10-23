@@ -900,8 +900,32 @@ public class NotesApp {
         }
     }
 
+    /** Position of t in hay where t starts a word (not in the middle of a word), or -1. */
+    static int findWord(String hay, String t, int from) {
+        int i = hay.indexOf(t, from);
+        while (i >= 0) {
+            if (i == 0 || !Character.isLetterOrDigit(hay.charAt(i - 1))) return i;
+            i = hay.indexOf(t, i + 1);
+        }
+        return -1;
+    }
+
+    static boolean hasAll(String hay, String[] terms) {
+        for (String t : terms) if (findWord(hay, t, 0) < 0) return false;
+        return true;
+    }
+
+    /**
+     * Pages whose title, text or SECTION NAME contain every term (matched at the start of
+     * words, so "arp" finds "ARP" and "arphardening" but not "carpeta"), best first,
+     * plus the sections whose own name matches.
+     */
     static Object search(String q) throws IOException {
-        List<Object> res = new ArrayList<Object>();
+        Map<String, Object> res = new LinkedHashMap<String, Object>();
+        List<Object> secRes = new ArrayList<Object>();
+        List<Object> pageRes = new ArrayList<Object>();
+        res.put("sections", secRes);
+        res.put("pages", pageRes);
         if (q == null || q.trim().isEmpty()) return res;
         String[] terms = parseTerms(q);
         if (terms.length == 0) return res;
@@ -910,25 +934,37 @@ public class NotesApp {
             Path nd = root.resolve(nb);
             for (String sec : ordered(nd, childDirs(nd))) {
                 Path sd = nd.resolve(sec);
-                for (String id : pageIds(sd)) {
+                String where = sec.toLowerCase().replaceAll("\\s+", " ");
+                List<String> ids = pageIds(sd);
+                if (hasAll(where, terms)) {
+                    Map<String, Object> sr = new LinkedHashMap<String, Object>();
+                    sr.put("nb", nb);
+                    sr.put("sec", sec);
+                    sr.put("pages", ids.size());
+                    secRes.add(sr);
+                }
+                for (String id : ids) {
                     Meta m;
                     try { m = meta(sd.resolve(id + ".html")); } catch (IOException e) { continue; }
                     String title = m.title.toLowerCase().replaceAll("\\s+", " "), flat = m.text.replaceAll("\\s+", " "), text = flat.toLowerCase();
                     int score = 0;
                     boolean all = true;
+                    int at = -1;
                     for (String t : terms) {
-                        boolean inT = title.contains(t), inX = text.contains(t);
-                        if (!inT && !inX) { all = false; break; }
+                        boolean inT = findWord(title, t, 0) >= 0, inS = findWord(where, t, 0) >= 0;
+                        int first = findWord(text, t, 0);
+                        if (!inT && !inS && first < 0) { all = false; break; }
                         if (inT) score += 10;
-                        int i = -1, c = 0;
-                        while ((i = text.indexOf(t, i + 1)) >= 0 && c < 20) c++;
+                        if (inS) score += 4;
+                        if (first >= 0 && (at < 0 || first < at)) at = first;
+                        int c = 0;
+                        for (int i = first; i >= 0 && c < 20; i = findWord(text, t, i + 1)) c++;
                         score += c;
                     }
                     if (!all) continue;
                     Map<String, Object> p = pageEntry(id, m);
                     p.put("nb", nb);
                     p.put("sec", sec);
-                    int at = text.indexOf(terms[0]);
                     String snip = at < 0 ? flat.substring(0, Math.min(140, flat.length()))
                             : (at > 60 ? "\u2026" : "") + flat.substring(Math.max(0, at - 60), Math.min(flat.length(), at + 120));
                     p.put("snippet", snip.replace('\n', ' '));
@@ -939,7 +975,8 @@ public class NotesApp {
         Collections.sort(hits, new Comparator<Object[]>() {
             public int compare(Object[] a, Object[] b) { return ((Integer) b[0]) - ((Integer) a[0]); }
         });
-        for (int i = 0; i < hits.size() && i < 300; i++) res.add(hits.get(i)[1]);
+        for (int i = 0; i < hits.size() && i < 300; i++) pageRes.add(hits.get(i)[1]);
+        res.put("total", hits.size());
         return res;
     }
 

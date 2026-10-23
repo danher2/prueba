@@ -89,6 +89,7 @@ body.resizing iframe,body.resizing #editor{pointer-events:none}
 .res .s{font-size:12.5px;opacity:.85}
 .res mark{background:var(--mark);color:inherit;border-radius:2px}
 .hint{color:var(--muted);padding:18px 14px;font-size:13px}
+#pages .grp b{color:var(--ink);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 /* ---------- right: editor ---------- */
 #main{border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
 #toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
@@ -967,18 +968,32 @@ async function runSearch(q){
   let res;
   try { res = await api('search?' + qs({ q })); } catch(e){ return fail(e); }
   if(q !== lastQuery) return;
-  $('#ppTitle').textContent = res.length ? `${res.length} result${res.length === 1 ? '' : 's'}` : 'No results';
+  const pages = res.pages || [], secs = res.sections || [], total = res.total || pages.length;
+  const n = total + secs.length;
+  $('#ppTitle').textContent = n ? `${n} result${n === 1 ? '' : 's'}` : 'No results';
   const list = $('#pages'); list.innerHTML = '';
   const words = parseTerms(q);
-  const terms = words.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'));
-  const re = new RegExp('(' + terms.join('|') + ')', 'gi');
-  for(const r of res){
-    const d = el('div', 'res', `<b>${esc(r.title || 'Untitled page').replace(re, '<mark>$1</mark>')}</b><span class="w">${esc(r.nb)} \u203a ${esc(r.sec)} \u00b7 ${esc(fmtDate(r.created))}</span><div class="s">${esc(r.snippet).replace(re, '<mark>$1</mark>')}</div>`);
+  const terms = words.map(t => esc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'));
+  // highlight only where a word starts, the same way the search matches
+  const re = new RegExp('(?<![\\p{L}\\p{N}])(' + terms.join('|') + ')', 'giu');
+  const hl = s => esc(s).replace(re, '<mark>$1</mark>');
+  if(secs.length){
+    list.append(el('div', 'hint grp', '<b>Sections</b>'));
+    for(const s of secs){
+      const d = el('div', 'res', `<b>\u{1F4C1} ${hl(s.sec)}</b><span class="w">${esc(s.nb)} \u00b7 ${s.pages} page${s.pages === 1 ? '' : 's'}</span>`);
+      d.onclick = () => openSection(s.nb, s.sec);
+      list.append(d);
+    }
+    if(pages.length) list.append(el('div', 'hint grp', '<b>Pages</b>'));
+  }
+  for(const r of pages){
+    const d = el('div', 'res', `<b>${hl(r.title || 'Untitled page')}</b><span class="w">${esc(r.nb)} \u203a ${hl(r.sec)} \u00b7 ${esc(fmtDate(r.created))}</span><div class="s">${hl(r.snippet)}</div>`);
     d.dataset.id = r.id;
     d.onclick = async () => { await openPage(r.nb, r.sec, r.id); findInPage(words[0]); };
     list.append(d);
   }
-  if(!res.length) list.append(el('div', 'hint', 'Nothing matches. Try fewer or different words.'));
+  if(total > pages.length) list.append(el('div', 'hint', `Showing the best ${pages.length} of ${total} pages. Add more words to narrow it down.`));
+  if(!n) list.append(el('div', 'hint', 'Nothing matches. Try fewer or different words.'));
   markActiveResult();
 }
 // "exact phrase" or (exact phrase) = one term; other words are separate terms
