@@ -16,6 +16,7 @@
       -All      take every file (a full upload)
       -Redo     take again what the previous run took (if that upload failed)
       -NotesFolder "C:\path\to\MyNotes"     if your notes are somewhere else
+      -NoPause  don't wait for Enter at the end
 
   It only reads your notes and copies them; it never changes or deletes them.
 #>
@@ -23,22 +24,31 @@ param(
     [string]$NotesFolder = (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'OneDrive\MyNotes'),
     [string]$OutFolder = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MyNotes-Upload'),
     [switch]$All,
-    [switch]$Redo
+    [switch]$Redo,
+    [switch]$NoPause
 )
 
 $ErrorActionPreference = 'Stop'
+# When started with right-click > Run with PowerShell, keep the window open at the end
+$keepOpen = [Environment]::UserInteractive -and -not $NoPause
+function Finish([int]$code) {
+    if ($keepOpen) { Write-Host ''; Read-Host 'Press Enter to close this window' | Out-Null }
+    exit $code
+}
+Write-Host ''
+Write-Host 'My Notes - preparing OneDrive upload' -ForegroundColor Cyan
 $userHome = [Environment]::GetFolderPath('UserProfile')
 
 if (-not (Test-Path -LiteralPath $NotesFolder -PathType Container)) {
     Write-Host "Notes folder not found: $NotesFolder" -ForegroundColor Red
     Write-Host 'Run it again with -NotesFolder "C:\path\to\MyNotes" (the folder shown at the bottom of My Notes).'
-    exit 1
+    Finish 1
 }
 $NotesFolder = (Resolve-Path -LiteralPath $NotesFolder).Path.TrimEnd('\', '/')
 $OutFolder = [IO.Path]::GetFullPath($OutFolder).TrimEnd('\', '/')
 if ($OutFolder.StartsWith($NotesFolder, [StringComparison]::OrdinalIgnoreCase)) {
     Write-Host "The upload folder can't be inside the notes folder." -ForegroundColor Red
-    exit 1
+    Finish 1
 }
 
 # What was uploaded last time is remembered here (one line per file: path, size, time).
@@ -59,6 +69,8 @@ $compareWith = if ($Redo) { $previous } else { $manifest }
 $known = if ($All) { @{} } else { Read-Manifest $compareWith }
 $firstRun = (-not $All) -and $known.Count -eq 0
 
+Write-Host "Notes folder: $NotesFolder"
+Write-Host 'Looking at your notes (this can take a minute the first time)...'
 # Every file in the notes folder, except deleted items (_Trash) and the app's temporary files.
 $sep = [IO.Path]::DirectorySeparatorChar
 $files = Get-ChildItem -LiteralPath $NotesFolder -Recurse -File -Force | Where-Object {
@@ -82,8 +94,12 @@ if (Test-Path -LiteralPath $OutFolder) { Remove-Item -LiteralPath $OutFolder -Re
 $target = Join-Path $OutFolder 'MyNotes'
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 
+Write-Host ("Checked {0} files. Copying {1} new or changed files..." -f $current.Count, $toCopy.Count)
 $bytes = 0
+$n = 0
 foreach ($f in $toCopy) {
+    $n++
+    if ($n % 200 -eq 0) { Write-Host ("  copied {0} of {1}..." -f $n, $toCopy.Count) }
     $rel = $f.FullName.Substring($NotesFolder.Length + 1)
     $dest = Join-Path $target $rel
     New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force | Out-Null
@@ -103,7 +119,7 @@ Write-Host ''
 if ($toCopy.Count -eq 0) {
     Write-Host 'Nothing new or changed since the last upload. Nothing to do.' -ForegroundColor Green
     Remove-Item -LiteralPath $OutFolder -Recurse -Force
-    exit 0
+    Finish 0
 }
 if ($All) { Write-Host ("Full upload: {0} files ({1:N1} MB)." -f $toCopy.Count, ($bytes / 1MB)) -ForegroundColor Cyan }
 elseif ($firstRun) { Write-Host ("First run, so this is everything: {0} files ({1:N1} MB)." -f $toCopy.Count, ($bytes / 1MB)) -ForegroundColor Cyan }
@@ -117,3 +133,4 @@ Write-Host ''
 Write-Host "The list of files in this upload is in: $listFile"
 Write-Host 'If the upload fails, run this script again with -Redo to rebuild the same set.'
 try { Invoke-Item -LiteralPath $OutFolder } catch { }
+Finish 0
