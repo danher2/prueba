@@ -99,7 +99,7 @@ body.resizing iframe,body.resizing #editor{pointer-events:none}
 .tb.on{background:var(--accent-soft);color:var(--accent)}
 .tb:disabled{opacity:.35;cursor:default}
 #scroll{flex:1;overflow:auto}
-#paper{max-width:900px;margin:22px auto 120px;padding:34px 48px 60px;background:var(--panel);border:1px solid var(--line);border-radius:12px;min-height:calc(100% - 44px)}
+#paper{max-width:1100px;margin:22px auto 120px;padding:34px 48px 60px;background:var(--panel);border:1px solid var(--line);border-radius:12px;min-height:calc(100% - 44px)}
 #title{width:100%;border:0;outline:0;background:transparent;color:var(--ink);font:600 28px/1.25 "Segoe UI",system-ui,sans-serif;padding:0 0 6px;border-bottom:1px solid var(--line)}
 #title::placeholder{color:var(--muted);font-weight:400}
 #date{color:var(--muted);font-size:12.5px;margin:6px 0 18px}
@@ -111,8 +111,11 @@ body.resizing iframe,body.resizing #editor{pointer-events:none}
 #editor a.att{display:inline-block;text-decoration:none;border:1px solid var(--line);border-radius:7px;padding:3px 10px;background:var(--bg);color:var(--ink)}
 #editor img{max-width:100%;height:auto;border-radius:4px}
 #editor img.sel{outline:2px solid var(--accent)}
-#editor table{border-collapse:collapse;margin:8px 0}
-#editor td,#editor th{border:1px solid var(--line);padding:5px 9px;vertical-align:top;min-width:60px}
+#editor table{border-collapse:collapse;margin:8px 0;width:100%;max-width:100%;table-layout:auto}
+#editor td,#editor th{border:1px solid var(--line);padding:5px 9px;vertical-align:top;min-width:40px;overflow-wrap:anywhere;word-break:break-word}
+#editor td img,#editor th img{max-width:100%}
+#editor td code,#editor th code{white-space:pre-wrap;word-break:break-all}
+#editor{overflow-wrap:anywhere}
 #editor pre{background:var(--code);padding:10px 12px;border-radius:6px;font:13px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap}
 #editor code{background:var(--code);padding:1px 5px;border-radius:4px;font:13.5px Consolas,"Cascadia Mono",monospace}
 #editor blockquote{border-left:3px solid var(--line);margin:4px 0 4px 0;padding-left:14px;color:inherit}
@@ -628,7 +631,7 @@ function restoreSel(){ editor.focus(); if(savedRange){ const s = getSelection();
 document.addEventListener('selectionchange', () => { saveSel(); updateToolbar(); });
 
 document.querySelectorAll('#toolbar .tb').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
-document.querySelectorAll('#toolbar [data-cmd]').forEach(b => b.onclick = () => exec(b.dataset.cmd));
+document.querySelectorAll('#toolbar [data-cmd]').forEach(b => b.onclick = () => /List$/.test(b.dataset.cmd) ? listCmd(b.dataset.cmd) : exec(b.dataset.cmd));
 document.querySelectorAll('#toolbar [data-block]').forEach(b => b.onclick = () => exec('formatBlock', '<' + b.dataset.block + '>'));
 
 function updateToolbar(){
@@ -661,20 +664,92 @@ function currentBlock(){
   while(n && n !== editor){ if(n.nodeType === 1 && /^(P|LI|DIV|H[1-6]|BLOCKQUOTE|PRE)$/.test(n.tagName)) return n; n = n.parentNode; }
   return null;
 }
-function toggleTodo(){
+// The lines the selection covers, each as its own block. Lines that are only separated by
+// line breaks inside one block are split into separate blocks first, so list buttons and
+// checkboxes apply to every selected line (like OneNote), not just one.
+const LEAF = 'p,div,h1,h2,h3,h4,h5,h6,li,blockquote';
+const BLOCKTAG = /^(P|DIV|H[1-6]|LI|BLOCKQUOTE|PRE|UL|OL|TABLE|TBODY|THEAD|TR|TD|TH|HR)$/;
+function wrapLooseText(){
+  // text typed straight into the page (not inside any block) -> one <p> per run
+  let run = [];
+  const flush = () => {
+    if(run.some(n => n.nodeName === 'BR' || (n.textContent || '').trim() || n.nodeName === 'IMG' || (n.nodeType === 1 && n.classList.contains('todo')))){
+      const p = document.createElement('p'); run[0].before(p); run.forEach(n => p.append(n));
+    }
+    run = [];
+  };
+  for(const n of [...editor.childNodes]){
+    if(n.nodeType === 1 && BLOCKTAG.test(n.tagName)) flush(); else run.push(n);
+  }
+  flush();
+}
+function splitAtBreaks(b){
+  const kids = [...b.childNodes];
+  const brs = kids.filter(n => n.nodeName === 'BR');
+  if(!brs.length || (brs.length === 1 && b.lastChild === brs[0])) return [b];
+  const parts = [[]];
+  for(const n of kids){ if(n.nodeName === 'BR') parts.push([]); else parts[parts.length - 1].push(n); }
+  while(parts.length > 1 && parts[parts.length - 1].every(n => n.nodeType === 3 && !n.data.trim())) parts.pop();
+  if(parts.length < 2) return [b];
+  const els = parts.map(part => { const e = b.cloneNode(false); part.forEach(n => e.append(n)); if(!e.childNodes.length) e.append(document.createElement('br')); return e; });
+  b.replaceWith(...els);
+  return els;
+}
+function selectedLines(){
   editor.focus();
-  let b = currentBlock();
-  if(!b){ document.execCommand('formatBlock', false, '<p>'); b = currentBlock(); }
-  if(!b) return;
-  const first = b.firstChild;
-  if(first && first.nodeType === 1 && first.classList.contains('todo')){
-    const nx = first.nextSibling; first.remove();
-    if(nx && nx.nodeType === 3) nx.data = nx.data.replace(/^\u00a0/, '');
-    b.classList.remove('done');
-  } else {
-    const sp = el('span', 'todo'); sp.contentEditable = 'false'; sp.dataset.done = '0'; sp.textContent = '\u2610';
-    b.insertBefore(document.createTextNode('\u00a0'), b.firstChild);
-    b.insertBefore(sp, b.firstChild);
+  const s = getSelection(); if(!s.rangeCount) return [];
+  wrapLooseText();
+  const r = s.getRangeAt(0);
+  let blocks = [...editor.querySelectorAll(LEAF)].filter(b =>
+    ![...b.children].some(c => BLOCKTAG.test(c.tagName)) && !b.closest('pre') && r.intersectsNode(b));
+  if(!blocks.length){ const b = currentBlock(); blocks = b ? [b] : []; }
+  if(!blocks.length) return [];
+  const collapsed = r.collapsed;
+  const sN = r.startContainer, eN = r.endContainer, eO = r.endOffset;
+  let lines = [];
+  for(const b of blocks){
+    if(collapsed){ lines.push(b); continue; }        // just the cursor: only its own line
+    lines.push(...splitAtBreaks(b));
+  }
+  if(!collapsed){
+    // keep only the lines the selection really covers (a split block may hold unselected lines too)
+    let i0 = lines.findIndex(l => l === sN || l.contains(sN));
+    let i1 = -1; lines.forEach((l, i) => { if(l === eN || l.contains(eN)) i1 = i; });
+    if(i0 < 0) i0 = 0;
+    if(i1 < 0) i1 = lines.length - 1;
+    // a selection ending right at the start of a line doesn't include that line
+    if(i1 > i0 && eO === 0 && eN !== lines[i1] && (eN.nodeType !== 3 || lines[i1].firstChild === eN || lines[i1].textContent.indexOf(eN.data) === 0)) i1--;
+    lines = lines.slice(i0, i1 + 1);
+    // select the whole lines again (splitting may have moved them)
+    const nr = document.createRange();
+    nr.setStart(lines[0], 0);
+    const last = lines[lines.length - 1]; nr.setEnd(last, last.childNodes.length);
+    s.removeAllRanges(); s.addRange(nr);
+  }
+  return lines;
+}
+function listCmd(cmd){
+  selectedLines();
+  exec(cmd);
+  // the browser sometimes leaves a list inside an empty paragraph; tidy that up
+  editor.querySelectorAll('p > ul:only-child, p > ol:only-child').forEach(l => { const p = l.parentElement; if(!p.textContent.replace(l.textContent, '').trim()) p.replaceWith(l); });
+}
+function hasTodo(b){ const f = b.firstChild; return !!(f && f.nodeType === 1 && f.classList && f.classList.contains('todo')); }
+function toggleTodo(){
+  let lines = selectedLines();
+  if(!lines.length){ document.execCommand('formatBlock', false, '<p>'); const b = currentBlock(); lines = b ? [b] : []; }
+  if(!lines.length) return;
+  const remove = lines.every(hasTodo);   // all already have one: take them off; otherwise add to the rest
+  for(const b of lines){
+    if(remove){
+      const first = b.firstChild, nx = first.nextSibling; first.remove();
+      if(nx && nx.nodeType === 3) nx.data = nx.data.replace(/^\u00a0/, '');
+      b.classList.remove('done');
+    } else if(!hasTodo(b)){
+      const sp = el('span', 'todo'); sp.contentEditable = 'false'; sp.dataset.done = '0'; sp.textContent = '\u2610';
+      b.insertBefore(document.createTextNode('\u00a0'), b.firstChild);
+      b.insertBefore(sp, b.firstChild);
+    }
   }
   markDirty();
 }
@@ -929,8 +1004,8 @@ editor.addEventListener('keydown', e => {
   }
   if(ctrl && !e.altKey && e.key === 'k'){ e.preventDefault(); linkDialog(); return; }
   if(ctrl && !e.altKey && e.key === '1'){ e.preventDefault(); toggleTodo(); return; }
-  if(ctrl && !e.altKey && e.key === '.'){ e.preventDefault(); exec('insertUnorderedList'); return; }
-  if(ctrl && !e.altKey && e.key === '/'){ e.preventDefault(); exec('insertOrderedList'); return; }
+  if(ctrl && !e.altKey && e.key === '.'){ e.preventDefault(); listCmd('insertUnorderedList'); return; }
+  if(ctrl && !e.altKey && e.key === '/'){ e.preventDefault(); listCmd('insertOrderedList'); return; }
   if(ctrl && !e.altKey && e.key === '-'){ e.preventDefault(); exec('strikeThrough'); return; }
   if(ctrl && e.altKey && /^[0-3]$/.test(e.key)){ e.preventDefault(); exec('formatBlock', e.key === '0' ? '<p>' : '<h' + e.key + '>'); return; }
   if(ctrl && e.altKey && e.key.toLowerCase() === 'h'){ e.preventDefault(); exec('hiliteColor', HL[0]); return; }
