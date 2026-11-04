@@ -1,0 +1,127 @@
+EXPLAIN TOOL - Instructions
+===========================
+
+WHAT IT DOES
+------------
+Select a word or phrase anywhere in Windows (web page, Word, PDF, etc.),
+press Ctrl+C and then Ctrl+Alt+E. A small Google window opens near the
+mouse with the English explanation (meaning, not translation).
+ - One word  -> Google searches "define <word>"   (dictionary box)
+ - A phrase  -> Google searches "what does "<phrase>" mean"
+No AI, no API key, no .exe needed. Only Google + Edge or Chrome.
+
+
+FILES (keep both in the SAME folder)
+------------------------------------
+ 1. Explain.ps1        -> the tool itself (opens the Google pop-up)
+ 2. Setup-Explain.ps1  -> run ONCE; creates the Desktop shortcut with Ctrl+Alt+E
+
+Suggested folder name: ExplainTool (e.g. C:\ExplainTool). It can be anywhere
+(C:\, Documents, etc.).
+Do NOT move the files after setup. If you move them, run the setup again.
+
+
+SETUP ON THE VIRTUAL MACHINE (copy & paste method)
+--------------------------------------------------
+ 1. Create a folder, for example C:\ExplainTool (Documents also works).
+    Use a name with no spaces so the "cd" command is easy to type.
+
+ 2. In GitHub, open Explain.ps1, click "Raw" (or select all the code), copy it.
+    Open Notepad, paste, and Save As:
+       File name:     Explain.ps1
+       Save as type:  All files (*.*)     <- important, so it is not .ps1.txt
+       Encoding:      UTF-8
+    Save it in your folder.
+
+ 3. Do the same for Setup-Explain.ps1 (same folder).
+
+ 4. Open Start -> type PowerShell -> open "Windows PowerShell"
+    (normal, NOT as administrator).
+
+ 5. Run these commands one at a time (change the folder if you used another):
+
+       cd C:\ExplainTool
+       dir
+       Unblock-File .\Explain.ps1
+       Unblock-File .\Setup-Explain.ps1
+       powershell -ExecutionPolicy Bypass -File .\Setup-Explain.ps1
+
+    - "dir" must show Explain.ps1 and Setup-Explain.ps1 (not .ps1.txt).
+    - The last command must show the green message:
+         "Done! Shortcut created on your Desktop"
+    - Press Enter to close.
+
+ 6. Check that an "Explain" shortcut appears on the Desktop.
+    Do NOT delete or move it (Windows only listens for Ctrl+Alt+E while
+    the shortcut is on the Desktop).
+
+
+HOW TO USE IT
+-------------
+ 1. Select a word or phrase.
+ 2. Press Ctrl+C.
+ 3. Press Ctrl+Alt+E.
+ 4. Wait about 1 second -> a small Google window opens with the explanation.
+
+You never run Explain.ps1 yourself. Just select, Ctrl+C, Ctrl+Alt+E.
+
+
+HOW TO STOP / TURN OFF / REMOVE IT
+----------------------------------
+Nothing runs in the background. Each Ctrl+Alt+E opens the Google window and
+the script finishes immediately, so there is no process to stop.
+
+ - Close the pop-up window:
+     click the X, or press Alt+F4 while the window is active.
+
+ - Turn off the shortcut temporarily:
+     right-click the "Explain" icon on the Desktop -> Properties ->
+     click the "Shortcut key" box -> press Backspace (shows "None") -> OK.
+     To turn it back on: same box -> press E -> OK.
+
+ - Remove the tool completely:
+     1. Delete the "Explain" shortcut from the Desktop (keys stop working).
+     2. Delete the ExplainTool folder if you no longer want the files.
+     Nothing else was installed or changed on the computer.
+
+
+WHAT WENT WRONG THE FIRST TIME (lessons learned)
+------------------------------------------------
+ - Running Explain.ps1 directly does nothing useful: it runs once, finds no
+   text and closes. The Desktop shortcut is what connects Ctrl+Alt+E to it.
+ - Right-click -> "Run with PowerShell" showed a black window that closed
+   immediately. Reason: Windows blocks downloaded scripts.
+   FIX: Unblock the files + run with "-ExecutionPolicy Bypass" from a
+   PowerShell window (step 5 above).
+
+
+RUNNING ANY DOWNLOADED POWERSHELL SCRIPT (general rule)
+-------------------------------------------------------
+ 1. Unblock it:
+      - Command:  Unblock-File .\name.ps1
+      - Or:       right-click file -> Properties -> tick "Unblock" -> OK
+ 2. Run it from a PowerShell window:
+      powershell -ExecutionPolicy Bypass -File .\name.ps1
+ Files you create yourself by pasting into Notepad are usually not blocked,
+ but you still need the -ExecutionPolicy Bypass command.
+ Only do this with scripts you trust.
+
+
+TROUBLESHOOTING
+---------------
+ - Ctrl+Alt+E does nothing:
+     Select a word, press Ctrl+C, then double-click the Explain icon on the
+     Desktop. If the Google window opens, the script works and only the key
+     combination is the problem: right-click the shortcut -> Properties ->
+     "Shortcut key" -> press a different letter -> OK.
+ - Ctrl+Alt+E is used by the remote desktop or another program:
+     change the letter as described above.
+ - Black window closes with no message:
+     run the command from a PowerShell window instead (step 5) so you can
+     read the red error text.
+ - It takes about 1 second to open: normal (PowerShell starting up).
+ - Backup with no setup: in Edge/Chrome select text -> right-click ->
+   "Search Google for ..." (only works in the browser).
+
+Reminder: only use it on general English text, not on confidential
+customer or bank information.
